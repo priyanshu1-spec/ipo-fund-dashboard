@@ -125,9 +125,11 @@ export default function IposPage() {
       if (gotAnything) {
         setSyncMessage(`Synced: ${result.created} added, ${result.updated} updated just now.`);
       } else if (result.errors?.length) {
+        const detail = result.errors.map((e) => e.message).join(" | ");
         setSyncMessage(
           "Automatic fetch isn't available from that source right now (the site may be blocking automated visits). " +
-            "No problem — just use \"Add IPO\" or \"Bulk Import\" below to enter it yourself, it only takes a moment."
+            "No problem — just use \"Add IPO\" or \"Bulk Import\" below to enter it yourself, it only takes a moment. " +
+            `(technical detail, only needed if troubleshooting: ${detail})`
         );
       } else {
         setSyncMessage("No new IPOs found. Everything here is already up to date.");

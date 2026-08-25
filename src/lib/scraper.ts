@@ -128,6 +128,92 @@ export interface SyncSource {
   type: IpoType;
 }
 
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+/**
+ * NSE's IPO page loads its table via JavaScript after the page opens, so a
+ * plain HTML fetch (extractIposFromHtml above) only ever sees an empty
+ * shell. NSE's own frontend fills that table by calling a separate JSON
+ * endpoint — this fetches that endpoint directly instead. NSE requires
+ * visiting a normal page first to pick up session cookies before its API
+ * will respond (an anti-scraping measure), so this does that handshake step
+ * first. Since NSE's exact field names aren't publicly documented and can
+ * change, field extraction below tries several known variants defensively;
+ * if literally none of a row's expected fields are recognized, this reports
+ * a diagnostic showing what keys *were* present, to make fixing it faster.
+ */
+async function fetchNseUpcomingIssues(
+  type: IpoType
+): Promise<{ ipos: ScrapedIpo[]; debugKeys?: string[] }> {
+  const homepageRes = await fetch("https://www.nseindia.com/market-data/all-upcoming-issues-ipo", {
+    headers: { ...BROWSER_HEADERS, Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!homepageRes.ok) throw new Error(`HTTP ${homepageRes.status} fetching NSE homepage (cookie step)`);
+
+  const setCookieHeaders =
+    typeof homepageRes.headers.getSetCookie === "function"
+      ? homepageRes.headers.getSetCookie()
+      : (homepageRes.headers.get("set-cookie") ?? "").split(/,(?=[^;]+=[^;]+)/);
+  const cookieHeader = setCookieHeaders
+    .map((c) => c.split(";")[0])
+    .filter(Boolean)
+    .join("; ");
+
+  const apiRes = await fetch("https://www.nseindia.com/api/all-upcoming-issues?category=ipo", {
+    headers: {
+      ...BROWSER_HEADERS,
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
+      Cookie: cookieHeader,
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status} fetching NSE IPO data`);
+
+  const data = await apiRes.json();
+  const list: Record<string, unknown>[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+  if (list.length === 0) return { ipos: [] };
+
+  const pick = (row: Record<string, unknown>, keys: string[]): string => {
+    for (const k of keys) {
+      if (row[k] !== undefined && row[k] !== null && row[k] !== "") return String(row[k]);
+    }
+    return "";
+  };
+
+  const ipos: ScrapedIpo[] = [];
+  let anyRecognized = false;
+  for (const row of list) {
+    const name = pick(row, ["companyName", "symbol", "name", "issuerName"]);
+    if (!name) continue;
+    anyRecognized = true;
+    const priceBand = parsePriceBand(pick(row, ["issuePrice", "priceRange", "issuePriceRange"]));
+    ipos.push({
+      name,
+      type,
+      openDate: parseDate(pick(row, ["issueStartDate", "startDate", "biddingStartDate"])),
+      closeDate: parseDate(pick(row, ["issueEndDate", "endDate", "biddingEndDate"])),
+      priceBandMin: priceBand.min,
+      priceBandMax: priceBand.max,
+      lotSize: parseNumber(pick(row, ["marketLot", "lotSize", "minLot"])),
+      issueSize: pick(row, ["issueSize"]),
+      status: "Upcoming",
+      gmp: 0, // NSE is the official exchange feed — it never carries grey market premium.
+      sourceUrl: "https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
+    });
+  }
+
+  if (!anyRecognized) {
+    return { ipos: [], debugKeys: Object.keys(list[0] ?? {}) };
+  }
+  return { ipos };
+}
+
 /**
  * Attempts to fetch and parse each configured source. Never throws — a
  * failed source just contributes zero rows and an entry in `errors`, so one
@@ -141,6 +227,18 @@ export async function syncIposFromSources(
 
   for (const source of sources) {
     try {
+      if (source.url.includes("nseindia.com")) {
+        const { ipos: nseIpos, debugKeys } = await fetchNseUpcomingIssues(source.type);
+        if (debugKeys) {
+          errors.push({
+            url: source.url,
+            message: `NSE responded but no recognizable fields — raw keys seen: ${debugKeys.join(", ")}`,
+          });
+        }
+        ipos.push(...nseIpos);
+        continue;
+      }
+
       const res = await fetch(source.url, {
         // Headers modeled on a real desktop browser — some sites reject
         // requests that look scripted (missing Accept/Accept-Language, an
@@ -148,10 +246,8 @@ export async function syncIposFromSources(
         // challenge. This won't get past JS-rendered pages or hard
         // CAPTCHA/Cloudflare-style challenges — nothing server-side can.
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          ...BROWSER_HEADERS,
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
         },
         // 15s timeout via AbortSignal so one slow source can't hang the whole sync.
         signal: AbortSignal.timeout(15_000),
