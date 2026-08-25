@@ -18,6 +18,7 @@ import {
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { exportAllToExcel } from "@/lib/xlsxExport";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -68,16 +69,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         >
           <Settings size={17} />
-          Settings & Audit Log
+          Settings
         </Link>
       )}
-      <a
-        href="/api/export"
-        className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+      <button
+        onClick={exportAllToExcel}
+        className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
       >
         <Download size={17} />
         Export to Excel
-      </a>
+      </button>
     </nav>
   );
 

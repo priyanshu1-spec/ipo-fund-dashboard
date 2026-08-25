@@ -8,7 +8,6 @@ import { TrendingUp } from "lucide-react";
 function LoginCard() {
   const { status } = useSession();
   const router = useRouter();
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -21,10 +20,10 @@ function LoginCard() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const result = await signIn("credentials", { username, password, redirect: false });
+    const result = await signIn("credentials", { password, redirect: false });
     setSubmitting(false);
     if (result?.error) {
-      setError("Wrong username or password.");
+      setError("Wrong password. Ask whoever gave you access to double-check it.");
       return;
     }
     router.replace("/");
@@ -38,26 +37,16 @@ function LoginCard() {
       </div>
       <h1 className="text-lg font-bold text-slate-900 dark:text-white">IPO Fund Dashboard</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Private access only. Sign in with the account you were given.
+        Private access only. Enter the access password you were given.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-3 text-left">
-        <div>
-          <label className="label">Username</label>
-          <input
-            required
-            autoFocus
-            className="input"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="e.g. priya"
-          />
-        </div>
         <div>
           <label className="label">Password</label>
           <input
             type="password"
             required
+            autoFocus
             className="input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -69,10 +58,14 @@ function LoginCard() {
             {error}
           </p>
         )}
-        <button type="submit" className="btn-primary w-full" disabled={submitting || !username || !password}>
-          {submitting ? "Checking…" : "Sign in"}
+        <button type="submit" className="btn-primary w-full" disabled={submitting || !password}>
+          {submitting ? "Checking…" : "Enter"}
         </button>
       </form>
+
+      <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">
+        Your data is stored only in this browser. Different devices/browsers will not share data.
+      </p>
     </div>
   );
 }

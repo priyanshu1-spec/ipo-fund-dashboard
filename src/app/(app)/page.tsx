@@ -1,6 +1,6 @@
 "use client";
 
-import useSWR from "swr";
+import { useMemo } from "react";
 import Link from "next/link";
 import {
   ListChecks,
@@ -22,43 +22,45 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
-import { fetcher } from "@/lib/fetcher";
+import { useLocalEntities, STORAGE_KEYS } from "@/lib/localStorage";
+import { buildFallbackIpos } from "@/lib/fallbackIpos";
+import { buildDashboardSummary } from "@/lib/calculations";
+import { findDuplicatePanWarnings } from "@/lib/duplicatePan";
 import { MetricCard } from "@/components/MetricCard";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, daysUntil, IPO_STATUS_COLORS } from "@/lib/utils";
-import type { DashboardSummary, IpoRow } from "@/types";
+import type { ApplicationRow, FundAllocationRow, InvestorRow, IpoRow } from "@/types";
 
 const PIE_COLORS = ["#6366f1", "#f43f5e"];
 
 export default function DashboardPage() {
-  const { data: summaryData, isLoading: loadingSummary } = useSWR<{
-    summary: DashboardSummary;
-    duplicatePanWarnings: { ipoName: string; pan: string }[];
-  }>("/api/dashboard/summary", fetcher);
-  const { data: iposData } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
+  const { items: ipos, isLoading } = useLocalEntities<IpoRow>(STORAGE_KEYS.ipos, "ipo", buildFallbackIpos());
+  const { items: applications } = useLocalEntities<ApplicationRow>(STORAGE_KEYS.applications, "app");
+  const { items: funds } = useLocalEntities<FundAllocationRow>(STORAGE_KEYS.funds, "fund");
+  const { items: investors } = useLocalEntities<InvestorRow>(STORAGE_KEYS.investors, "inv");
 
-  const summary = summaryData?.summary;
-  const warnings = summaryData?.duplicatePanWarnings ?? [];
-  const ipos = iposData?.ipos ?? [];
+  const summary = useMemo(
+    () => buildDashboardSummary(ipos, applications, funds, investors),
+    [ipos, applications, funds, investors]
+  );
+  const warnings = useMemo(() => findDuplicatePanWarnings(applications), [applications]);
 
   const upcomingOrOpen = ipos
     .filter((i) => i.status === "Upcoming" || i.status === "Open")
     .sort((a, b) => (a.closeDate < b.closeDate ? -1 : 1))
     .slice(0, 6);
 
-  const pieData = summary
-    ? [
-        { name: "Self Capital", value: summary.totalSelfCapital },
-        { name: "Third-Party Capital", value: summary.totalThirdPartyCapital },
-      ]
-    : [];
+  const pieData = [
+    { name: "Self Capital", value: summary.totalSelfCapital },
+    { name: "Third-Party Capital", value: summary.totalThirdPartyCapital },
+  ];
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Live overview of active bids, blocked capital, and estimated returns."
+        subtitle="Live overview of active bids, blocked capital, and estimated returns. Stored in this browser only."
       />
 
       {warnings.length > 0 && (
@@ -78,32 +80,26 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label="Total Active Bids"
-          value={loadingSummary ? "—" : String(summary?.totalActiveBids ?? 0)}
+          value={isLoading ? "—" : String(summary.totalActiveBids)}
           icon={ListChecks}
           accent="sky"
         />
         <MetricCard
           label="Total Blocked Capital"
-          value={loadingSummary ? "—" : formatCurrency(summary?.totalBlockedCapital ?? 0)}
+          value={isLoading ? "—" : formatCurrency(summary.totalBlockedCapital)}
           icon={Wallet}
           accent="purple"
-          sub={
-            summary
-              ? `Self ${formatCurrency(summary.totalSelfCapital)} · Others ${formatCurrency(
-                  summary.totalThirdPartyCapital
-                )}`
-              : undefined
-          }
+          sub={`Self ${formatCurrency(summary.totalSelfCapital)} · Others ${formatCurrency(summary.totalThirdPartyCapital)}`}
         />
         <MetricCard
           label="Pending Allotments"
-          value={loadingSummary ? "—" : String(summary?.pendingAllotments ?? 0)}
+          value={isLoading ? "—" : String(summary.pendingAllotments)}
           icon={Clock}
           accent="amber"
         />
         <MetricCard
           label="Estimated Profit (GMP-based)"
-          value={loadingSummary ? "—" : formatCurrency(summary?.estimatedProfitFromGmp ?? 0)}
+          value={isLoading ? "—" : formatCurrency(summary.estimatedProfitFromGmp)}
           icon={TrendingUp}
           accent="emerald"
         />
@@ -135,7 +131,7 @@ export default function DashboardPage() {
           <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
             Monthly Realised P&amp;L
           </h3>
-          {summary && summary.monthlyPnl.length > 0 ? (
+          {summary.monthlyPnl.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={summary.monthlyPnl}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-800" />
@@ -209,14 +205,14 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {(summary?.investorLedgers ?? []).length === 0 && (
+                {summary.investorLedgers.length === 0 && (
                   <tr>
                     <td colSpan={4} className="td py-6 text-center text-slate-400">
                       No investors yet.
                     </td>
                   </tr>
                 )}
-                {summary?.investorLedgers.map((l) => (
+                {summary.investorLedgers.map((l) => (
                   <tr key={l.investorId} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="td font-medium">{l.investorName}</td>
                     <td className="td">{formatCurrency(l.totalProvided)}</td>

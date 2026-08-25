@@ -2,7 +2,7 @@
   "name": "ipo-fund-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "Personal IPO Tracking & Multi-Account Fund Allocation Dashboard, backed by Vercel Postgres.",
+  "description": "Personal IPO Tracking & Multi-Account Fund Allocation Dashboard — no backend database, data lives in the browser (localStorage).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,8 +11,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "pg": "^8.13.1",
-    "cheerio": "^1.0.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.436.0",
@@ -21,13 +19,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.12.7",
-    "swr": "^2.2.5",
-    "xlsx": "^0.18.5",
-    "zod": "^3.23.8"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.14.15",
-    "@types/pg": "^8.11.10",
     "@types/react": "^18.3.4",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",

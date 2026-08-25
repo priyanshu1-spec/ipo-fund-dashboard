@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
-import { fetcher, apiRequest } from "@/lib/fetcher";
+import { useLocalEntities, STORAGE_KEYS } from "@/lib/localStorage";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatCurrency, formatDate, maskPan, ALLOTMENT_STATUS_COLORS } from "@/lib/utils";
+import { formatCurrency, maskPan, ALLOTMENT_STATUS_COLORS } from "@/lib/utils";
 import type { ApplicationRow, AllotmentStatus, ApplicationCategory, IpoRow, InvestorRow } from "@/types";
 
 const CATEGORIES: ApplicationCategory[] = ["Retail", "HNI (sHNI)", "bHNI", "Shareholder", "Employee"];
@@ -42,12 +41,12 @@ export default function ApplicationsPage() {
   const canEdit = role === "editor";
   const canDelete = role === "editor";
 
-  const { data, mutate, isLoading } = useSWR<{ applications: ApplicationRow[] }>("/api/applications", fetcher);
-  const { data: iposData } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
-  const { data: investorsData } = useSWR<{ investors: InvestorRow[] }>("/api/investors", fetcher);
-  const applications = data?.applications ?? [];
-  const ipos = iposData?.ipos ?? [];
-  const investors = investorsData?.investors ?? [];
+  const { items: applications, isLoading, create, update, remove } = useLocalEntities<ApplicationRow>(
+    STORAGE_KEYS.applications,
+    "app"
+  );
+  const { items: ipos } = useLocalEntities<IpoRow>(STORAGE_KEYS.ipos, "ipo");
+  const { items: investors } = useLocalEntities<InvestorRow>(STORAGE_KEYS.investors, "inv");
 
   const [search, setSearch] = useState("");
   const [investorFilter, setInvestorFilter] = useState("All");
@@ -85,24 +84,27 @@ export default function ApplicationsPage() {
     setFormOpen(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
       const ipo = ipos.find((i) => i.id === form.ipoId);
       const investor = investors.find((inv) => inv.id === form.investorId);
+      const now = new Date().toISOString();
       const payload = {
         ...form,
         ipoName: ipo?.name ?? form.ipoName ?? "",
         appliedInNameOf: form.appliedInNameOf || investor?.name || "",
+        createdBy: form.createdBy || "editor",
+        createdAt: form.createdAt || now,
+        updatedAt: now,
       };
       if (editing) {
-        await apiRequest(`/api/applications/${editing.id}`, "PUT", payload);
+        update(editing.id, payload);
       } else {
-        await apiRequest("/api/applications", "POST", payload);
+        create(payload as Omit<ApplicationRow, "id">);
       }
-      await mutate();
       setFormOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -111,10 +113,9 @@ export default function ApplicationsPage() {
     }
   }
 
-  async function handleDelete(app: ApplicationRow) {
+  function handleDelete(app: ApplicationRow) {
     if (!confirm(`Delete application for "${app.ipoName}"?`)) return;
-    await apiRequest(`/api/applications/${app.id}`, "DELETE");
-    await mutate();
+    remove(app.id);
   }
 
   return (

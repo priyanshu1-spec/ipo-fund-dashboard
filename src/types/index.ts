@@ -1,21 +1,10 @@
 // ============================================================================
-// Core domain types, shared between server (API routes, sheet mapping) and
-// client (React components). Keep these in sync with docs/SCHEMA.md.
+// Core domain types — this app has no backend database; every list here is
+// persisted to the browser's localStorage (see src/lib/localStorage.ts) and
+// these types describe exactly what's stored. Keep in sync with docs/SCHEMA.md.
 // ============================================================================
 
 export type UserRole = "editor" | "viewer";
-
-export interface UserAccountRow {
-  id: string;
-  username: string;
-  /** Never sent to the client — stripped before any API response. */
-  passwordHash: string;
-  role: UserRole;
-  status: "active" | "revoked";
-  createdBy: string;
-  createdAt: string;
-  notes?: string;
-}
 
 export type IpoType = "Mainboard" | "SME";
 
@@ -119,17 +108,6 @@ export interface InvestorRow {
   status: "Active" | "Inactive";
   createdAt: string;
   notes?: string;
-}
-
-export interface AuditLogRow {
-  id: string;
-  timestamp: string;
-  /** Who did it — since access is a shared password rather than individual accounts, this is a role label (e.g. "editor", "system-cron"), not a person's identity. */
-  actor: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  details: string;
 }
 
 // ---- Derived / computed view models ---------------------------------------

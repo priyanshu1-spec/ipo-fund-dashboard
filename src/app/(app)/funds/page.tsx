@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
-import { fetcher, apiRequest } from "@/lib/fetcher";
+import { useLocalEntities, STORAGE_KEYS } from "@/lib/localStorage";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -30,12 +29,12 @@ export default function FundsPage() {
   const canEdit = role === "editor";
   const canDelete = role === "editor";
 
-  const { data, mutate, isLoading } = useSWR<{ funds: FundAllocationRow[] }>("/api/funds", fetcher);
-  const { data: appsData } = useSWR<{ applications: ApplicationRow[] }>("/api/applications", fetcher);
-  const { data: investorsData } = useSWR<{ investors: InvestorRow[] }>("/api/investors", fetcher);
-  const funds = data?.funds ?? [];
-  const applications = appsData?.applications ?? [];
-  const investors = investorsData?.investors ?? [];
+  const { items: funds, isLoading, create, update, remove } = useLocalEntities<FundAllocationRow>(
+    STORAGE_KEYS.funds,
+    "fund"
+  );
+  const { items: applications } = useLocalEntities<ApplicationRow>(STORAGE_KEYS.applications, "app");
+  const { items: investors } = useLocalEntities<InvestorRow>(STORAGE_KEYS.investors, "inv");
   const appById = useMemo(() => new Map(applications.map((a) => [a.id, a])), [applications]);
 
   const [search, setSearch] = useState("");
@@ -69,7 +68,7 @@ export default function FundsPage() {
     setFormOpen(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
@@ -81,13 +80,13 @@ export default function FundsPage() {
         ipoName: app?.ipoName ?? "",
         investorName: investor?.name ?? "",
         repaymentBankAccount: form.repaymentBankAccount || investor?.defaultBankAccount || "",
+        createdAt: form.createdAt || new Date().toISOString(),
       };
       if (editing) {
-        await apiRequest(`/api/funds/${editing.id}`, "PUT", payload);
+        update(editing.id, payload);
       } else {
-        await apiRequest("/api/funds", "POST", payload);
+        create(payload as Omit<FundAllocationRow, "id">);
       }
-      await mutate();
       setFormOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -96,10 +95,9 @@ export default function FundsPage() {
     }
   }
 
-  async function handleDelete(f: FundAllocationRow) {
+  function handleDelete(f: FundAllocationRow) {
     if (!confirm(`Delete this fund allocation for "${f.ipoName}"?`)) return;
-    await apiRequest(`/api/funds/${f.id}`, "DELETE");
-    await mutate();
+    remove(f.id);
   }
 
   return (

@@ -1,10 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { Plus, RefreshCw, Search, Upload, Pencil, Trash2 } from "lucide-react";
-import { fetcher, apiRequest } from "@/lib/fetcher";
+import { useLocalEntities, STORAGE_KEYS } from "@/lib/localStorage";
+import { buildFallbackIpos } from "@/lib/fallbackIpos";
+import {
+  getDefaultSources,
+  syncIposClientSide,
+  mergeScrapedIntoExisting,
+  importIposFromJson,
+  type ScrapedIpo,
+} from "@/lib/clientIpoSync";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -46,8 +53,11 @@ export default function IposPage() {
   const canEdit = role === "editor";
   const canDelete = role === "editor";
 
-  const { data, mutate, isLoading } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
-  const ipos = data?.ipos ?? [];
+  const { items: ipos, isLoading, create, update, remove, replaceAll } = useLocalEntities<IpoRow>(
+    STORAGE_KEYS.ipos,
+    "ipo",
+    buildFallbackIpos()
+  );
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<IpoStatus | "All">("All");
@@ -87,17 +97,16 @@ export default function IposPage() {
     setFormOpen(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
       if (editing) {
-        await apiRequest(`/api/ipos/${editing.id}`, "PUT", form);
+        update(editing.id, form);
       } else {
-        await apiRequest("/api/ipos", "POST", form);
+        create(form as Omit<IpoRow, "id">);
       }
-      await mutate();
       setFormOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -106,35 +115,51 @@ export default function IposPage() {
     }
   }
 
-  async function handleDelete(ipo: IpoRow) {
+  function handleDelete(ipo: IpoRow) {
     if (!confirm(`Delete "${ipo.name}"? This cannot be undone.`)) return;
-    await apiRequest(`/api/ipos/${ipo.id}`, "DELETE");
-    await mutate();
+    remove(ipo.id);
+  }
+
+  function applyScraped(scraped: ScrapedIpo[]) {
+    let created = 0;
+    let updated = 0;
+    let next = [...ipos];
+    for (const item of scraped) {
+      if (!item.name) continue;
+      const idx = next.findIndex((i) => i.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+      if (idx >= 0) {
+        next[idx] = mergeScrapedIntoExisting(item, next[idx]);
+        updated++;
+      } else {
+        const merged = mergeScrapedIntoExisting(item, undefined);
+        next = [{ ...merged, id: `ipo_${Date.now()}_${created}` }, ...next];
+        created++;
+      }
+    }
+    replaceAll(next);
+    return { created, updated };
   }
 
   async function handleSyncNow() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const result = await apiRequest<{ created: number; updated: number; errors: { url: string; message: string }[] }>(
-        "/api/ipos/sync",
-        "POST",
-        {}
-      );
+      const { ipos: scraped, errors } = await syncIposClientSide(getDefaultSources());
+      const result = applyScraped(scraped);
       const gotAnything = result.created > 0 || result.updated > 0;
       if (gotAnything) {
         setSyncMessage(`Synced: ${result.created} added, ${result.updated} updated just now.`);
-      } else if (result.errors?.length) {
-        const detail = result.errors.map((e) => e.message).join(" | ");
+      } else if (errors.length) {
+        const detail = errors.map((e) => e.message).join(" | ");
         setSyncMessage(
-          "Automatic fetch isn't available from that source right now (the site may be blocking automated visits). " +
-            "No problem — just use \"Add IPO\" or \"Bulk Import\" below to enter it yourself, it only takes a moment. " +
-            `(technical detail, only needed if troubleshooting: ${detail})`
+          "Automatic fetch isn't available right now (the site may be blocking automated visits, or the free CORS " +
+            "proxy this needs is down/rate-limited — that's an extra point of failure with no backend). " +
+            "No problem — just use \"Add IPO\" or \"Bulk Import\" below. " +
+            `(technical detail: ${detail})`
         );
       } else {
         setSyncMessage("No new IPOs found. Everything here is already up to date.");
       }
-      await mutate();
     } catch (err) {
       setSyncMessage(err instanceof Error ? err.message : "Sync failed");
     } finally {
@@ -142,17 +167,15 @@ export default function IposPage() {
     }
   }
 
-  async function handleImport() {
+  function handleImport() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const result = await apiRequest<{ created: number; updated: number }>("/api/ipos/sync", "POST", {
-        jsonImport: importText,
-      });
+      const scraped = importIposFromJson(importText);
+      const result = applyScraped(scraped);
       setSyncMessage(`Imported: ${result.created} created, ${result.updated} updated.`);
       setImportOpen(false);
       setImportText("");
-      await mutate();
     } catch (err) {
       setSyncMessage(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -164,7 +187,7 @@ export default function IposPage() {
     <div>
       <PageHeader
         title="IPO Market Watch"
-        subtitle="Mainboard & SME IPOs — dates, price band, lot size, status and GMP."
+        subtitle="Mainboard & SME IPOs — dates, price band, lot size, status and GMP. Stored in this browser only."
         action={
           canEdit ? (
             <div className="flex gap-2">

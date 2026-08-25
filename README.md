@@ -1,15 +1,15 @@
 # IPO Fund Dashboard
 
 A private IPO tracking and multi-account fund allocation dashboard. Next.js
-14 (App Router) + TypeScript + Tailwind CSS on the frontend, Vercel Postgres
-as the database, and per-person accounts (username + password, managed
-in-app) for access — everything deploys and configures from one place
-(Vercel), free.
+14 (App Router) + TypeScript + Tailwind CSS. **No backend database** — all
+data lives in the browser's `localStorage`, and access is a simple shared
+password. Deploys free on Vercel with nothing else to sign up for.
 
 ## What it does
 
 - **IPO Market Watch** — Mainboard & SME IPOs: dates, price band, lot size,
-  status, GMP (manual or auto-synced), with search and filters.
+  status, GMP (manual or best-effort client-side synced), with search and
+  filters.
 - **Application Ledger** — every bid: which Demat/bank account it was applied
   under, PAN, category (Retail/HNI/bHNI/Shareholder/Employee), lots, amount
   blocked, allotment status, refund tracking.
@@ -21,30 +21,36 @@ in-app) for access — everything deploys and configures from one place
 - **Dashboard** — active bids, blocked capital (self vs. third-party split),
   pending allotments, GMP-based estimated profit, monthly realised P&L chart,
   duplicate-PAN warnings, upcoming/closing-soon IPOs.
-- **Access control** — per-person username/password accounts managed from an
-  in-app Settings page (add, change role, revoke, delete), plus a bootstrap
-  admin login (env vars) that always works so you can never lock yourself
-  out, and a full audit log of every change labeled by who did it.
-- **Excel export**.
+- **Excel export** — your actual backup, since there's no server-side copy.
 
-## Quick start (local dev)
+## Important: no database means no shared/multi-device data
+
+This is a deliberate trade-off, not an oversight. Because there's no backend
+storage, **every browser/device has its own independent copy of the data.**
+If you open the dashboard on your phone and your laptop, you'll see two
+different, unconnected datasets. If you share the link and password with
+someone else, they get their own empty dashboard, not a shared view of
+yours. If that's not what you want, a database-backed version (with real
+shared, multi-device data) is a different architecture — ask if you'd
+rather have that instead.
+
+## Quick start
 
 ```bash
 npm install
-vercel link && vercel env pull .env.local   # after connecting Postgres — see docs/DEPLOYMENT.md
+cp .env.example .env.local   # fill in a password — see docs/DEPLOYMENT.md
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), sign in with
-`BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD`, then create real
-accounts for anyone else under **Settings → Manage Users**.
+Open [http://localhost:3000](http://localhost:3000), enter the password you
+set as `APP_ACCESS_PASSWORD`.
 
 ## Documentation
 
 | Doc | What's in it |
 |---|---|
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Full walkthrough: deploy to Vercel, connect the free Postgres database, set passwords, cron setup, custom domain, backups |
-| [`docs/SCHEMA.md`](docs/SCHEMA.md) | Exact table structure |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deploying to Vercel (no database step at all), passwords, custom domain, backups |
+| [`docs/SCHEMA.md`](docs/SCHEMA.md) | Exact localStorage key/shape for every entity |
 
 ## Project structure
 
@@ -57,56 +63,34 @@ src/
       applications/    # Module B — Application Ledger
       funds/           # Module C — Fund Allocation
       investors/       # Investor Master + live ledger
-      settings/        # Manage Users + audit log (editors only)
+      settings/        # How storage/access works
     login/
-    api/               # REST-ish route handlers, one per resource
+    api/auth/          # the only backend route — NextAuth sign-in
   components/          # Reusable UI (AppShell, Modal, MetricCard, ...)
   lib/
-    db.ts                # Postgres client + auto schema creation
-    password.ts            # scrypt password hashing
-    repositories/            # typed CRUD per entity, built on db.ts
-    auth.ts, apiAuth.ts        # NextAuth (per-user Credentials provider) + API route guard
-    calculations.ts          # dashboard/ledger/profit math
-    scraper.ts                # best-effort automated IPO data fetch
-  types/                # shared TypeScript types
+    localStorage.ts       # the entire data layer — typed localStorage CRUD
+    fallbackIpos.ts         # sample rows shown before you've added real ones
+    clientIpoSync.ts          # best-effort client-side IPO fetch (CORS proxy)
+    xlsxExport.ts               # client-side Excel export/backup
+    calculations.ts               # dashboard/ledger/profit math (pure, reusable)
+    duplicatePan.ts                 # SEBI duplicate-PAN warning check
+    auth.ts                          # NextAuth password-only Credentials provider
+  types/                # shared TypeScript types — the schema, in effect
 ```
 
 ## Tech decisions & why
 
-- **Vercel Postgres, not Google Sheets** — this app deliberately trades "your
-  data lives in an inspectable spreadsheet" for "zero external consoles,
-  everything in one dashboard." If you'd rather have the Sheets-backed
-  version (browse/edit data as a normal spreadsheet, Google Sign-In per
-  person with roles), that's a straightforward variant to build instead —
-  just ask.
-- **Per-person accounts stored in the app's own database, not an external
-  identity provider** — real access management (add/revoke/change role per
-  person, see who did what in the audit log) without any external console.
-  A bootstrap admin login (env vars) always works underneath, so you can
-  never lock yourself out even if every account gets deleted.
-- **IPO data sync is best-effort by design** — no free, stable public API for
-  Indian IPO data exists. The scraper is a heuristic table parser (see
-  `src/lib/scraper.ts` for the full reasoning) meant to save typing, not to be
-  blindly trusted — always eyeball GMP/dates. Manual entry and JSON bulk
-  import always work regardless of scraper health.
-
-## A few things you probably want but might not have thought to ask for
-
-Already built in, beyond the original spec:
-
-- **Per-person accounts with two roles** (editor vs. viewer) so you can hand
-  a CA or spouse their own read-only login without risking accidental edits,
-  and revoke just their access without touching anyone else's.
-- **Duplicate-PAN detection** — SEBI rejects multiple retail applications
-  under the same PAN for one IPO; the dashboard flags it before it becomes a
-  refund headache.
-- **GMP-based live profit estimator** per application and portfolio-wide,
-  that automatically switches to realised P&L once you record a listing
-  price or sell price.
-- **"Closing in N days" badges** on open IPOs so you don't miss a bid window.
-- **Excel export** of the entire ledger (including the computed investor
-  summary) for backups or handing to your CA.
-- **Dark/light theme** with persisted preference.
-- **Bulk JSON import** for IPO data as a robust fallback when automated
-  scraping inevitably breaks on a site redesign.
-- **Audit log** of every create/update/delete, labeled with which user did it.
+- **No backend, no database** — the simplest possible thing to deploy: push
+  code, set two or three passwords, done. The trade-off, stated plainly
+  above, is no shared/multi-device data. That trade was made explicitly at
+  your request.
+- **Shared password, not per-person accounts** — with no database, there's
+  nowhere to store individual accounts either; access is one (or two)
+  passwords set as environment variables.
+- **IPO data sync is client-side and best-effort by design** — a browser
+  can't fetch arbitrary external sites directly (CORS), so "Sync Now" routes
+  through a free public proxy and parses whatever HTML comes back. This is
+  meaningfully less reliable than a server-side fetch, on top of the
+  underlying reality that no free, stable, official source of Indian IPO GMP
+  data exists at all. See `src/lib/clientIpoSync.ts`. Manual entry and JSON
+  bulk import always work regardless.

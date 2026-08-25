@@ -1,41 +1,36 @@
 import type { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { findUserByUsername } from "@/lib/repositories/users";
-import { verifyPassword } from "@/lib/password";
 import type { UserRole } from "@/types";
 
 /**
- * Per-person accounts, stored in the app's own database (no external
- * identity provider). BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD
- * always work regardless of what's in the database — that's what guarantees
- * the owner can never be locked out, and is how you log in the very first
- * time (before any users exist) to then create real accounts under
- * Settings -> Manage Users.
+ * There is no backend database, so access is a shared password rather than
+ * individual accounts: APP_ACCESS_PASSWORD (required) grants full access,
+ * APP_VIEWER_PASSWORD (optional) grants read-only access. To revoke access
+ * for everyone, change the password(s) in your hosting provider's env vars
+ * and redeploy.
  */
 export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Credentials",
+      name: "Password",
       credentials: {
-        username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const username = credentials?.username?.trim() ?? "";
         const password = credentials?.password ?? "";
-        if (!username || !password) return null;
+        const editorPassword = process.env.APP_ACCESS_PASSWORD;
+        const viewerPassword = process.env.APP_VIEWER_PASSWORD;
 
-        const bootstrapUser = process.env.BOOTSTRAP_ADMIN_USERNAME;
-        const bootstrapPass = process.env.BOOTSTRAP_ADMIN_PASSWORD;
-        if (bootstrapUser && bootstrapPass && username === bootstrapUser && password === bootstrapPass) {
-          return { id: "bootstrap-admin", name: username, role: "editor" as UserRole };
+        if (!editorPassword) {
+          throw new Error("APP_ACCESS_PASSWORD is not configured on the server. See docs/DEPLOYMENT.md.");
         }
-
-        const user = await findUserByUsername(username);
-        if (!user || user.status !== "active") return null;
-        if (!verifyPassword(password, user.passwordHash)) return null;
-
-        return { id: user.id, name: user.username, role: user.role };
+        if (password && password === editorPassword) {
+          return { id: "editor", name: "Full access", role: "editor" as UserRole };
+        }
+        if (viewerPassword && password && password === viewerPassword) {
+          return { id: "viewer", name: "View only", role: "viewer" as UserRole };
+        }
+        return null;
       },
     }),
   ],
