@@ -43,24 +43,32 @@ export async function GET(req: Request) {
     });
   }
 
-  const { ipos: scraped, errors } = await syncIposFromSources(sources);
-  let created = 0;
-  let updated = 0;
-  for (const item of scraped) {
-    if (!item.name) continue;
-    const existing = await findIpoByName(item.name);
-    const patch = mergeScrapedIntoExisting(item, existing);
-    if (existing) {
-      await updateIpo(existing.id, patch);
-      updated++;
-    } else {
-      await createIpo(patch);
-      created++;
+  try {
+    const { ipos: scraped, errors } = await syncIposFromSources(sources);
+    let created = 0;
+    let updated = 0;
+    for (const item of scraped) {
+      if (!item.name) continue;
+      const existing = await findIpoByName(item.name);
+      const patch = mergeScrapedIntoExisting(item, existing);
+      if (existing) {
+        await updateIpo(existing.id, patch);
+        updated++;
+      } else {
+        await createIpo(patch);
+        created++;
+      }
     }
-  }
-  await logAudit("system-cron", "sync", "IPO", "cron-sync", JSON.stringify({ created, updated, errors }));
+    await logAudit("system-cron", "sync", "IPO", "cron-sync", JSON.stringify({ created, updated, errors }));
 
-  return NextResponse.json({ ok: true, created, updated, errors });
+    return NextResponse.json({ ok: true, created, updated, errors });
+  } catch (err) {
+    console.error("Cron IPO sync failed:", err);
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {

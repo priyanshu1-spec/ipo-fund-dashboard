@@ -83,9 +83,20 @@ export async function POST(req: Request) {
     );
   }
 
-  const { ipos: scraped, errors } = await syncIposFromSources(sources);
-  const result = await applyScrapedIpos(scraped, auth.actor);
-  await logAudit(auth.actor, "sync", "IPO", "auto-sync", JSON.stringify({ ...result, errors }));
+  try {
+    const { ipos: scraped, errors } = await syncIposFromSources(sources);
+    const result = await applyScrapedIpos(scraped, auth.actor);
+    await logAudit(auth.actor, "sync", "IPO", "auto-sync", JSON.stringify({ ...result, errors }));
 
-  return NextResponse.json({ ...result, source: "scrape", errors });
+    return NextResponse.json({ ...result, source: "scrape", errors });
+  } catch (err) {
+    // Never let an unexpected failure (e.g. a database hiccup while saving a
+    // fetched IPO) surface as a bare "500" with no explanation — always
+    // report what actually broke.
+    console.error("IPO sync failed:", err);
+    return NextResponse.json(
+      { error: `Sync failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 }
+    );
+  }
 }
