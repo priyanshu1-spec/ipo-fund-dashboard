@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.4",
+    "pg": "^8.13.1",
     "cheerio": "^1.0.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.15",
+    "@types/pg": "^8.11.10",
     "@types/react": "^18.3.4",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",

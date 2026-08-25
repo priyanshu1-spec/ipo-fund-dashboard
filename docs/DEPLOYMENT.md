@@ -31,16 +31,32 @@ Vercel deploys from a git repo.
    (e.g. `https://your-project.vercel.app`), then **redeploy** (Deployments
    tab → ⋯ → Redeploy) so it picks up the change.
 
-## 3. Connect the database (Vercel Postgres, free tier)
+## 3. Connect the database (free, pick any provider)
 
-1. In your project, go to the **Storage** tab → **Create Database** →
-   **Postgres** → pick the free plan → **Connect Project** (select this
-   project, all environments).
-2. That's it — Vercel injects `POSTGRES_URL` and friends into your project's
-   env vars automatically. The app creates its own tables the first time it
-   runs (see `src/lib/db.ts`) — there's no migration step to run by hand.
-3. For local dev, run `vercel link` then `vercel env pull .env.local` in the
-   project folder to copy those same values down to your machine.
+The app works with a plain Postgres connection string in `DATABASE_URL` —
+you're not locked into one provider. Two easy free options:
+
+**Option A — Neon** (neon.tech): sign up free (no card) → create a project →
+copy the **Connection string** shown on the project dashboard (starts with
+`postgresql://`).
+
+**Option B — Supabase** (supabase.com): sign up free (no card) → create a
+project → **Project Settings → Database → Connection string** → copy the
+"URI" one (starts with `postgresql://`).
+
+**Option C — Vercel Postgres**: Storage tab → Create Database → Postgres →
+Connect Project. Vercel injects its own `POSTGRES_URL` automatically, which
+the app also reads if `DATABASE_URL` isn't set.
+
+Whichever you pick:
+
+1. Vercel → your project → **Settings → Environment Variables → Add New**
+2. Key: `DATABASE_URL`, Value: the connection string you copied
+3. Save → **Deployments** → ⋯ → **Redeploy**
+
+That's it — the app creates its own tables the first time it runs (see
+`src/lib/db.ts`), no migration step to run by hand. For local dev, put the
+same value in `.env.local`.
 
 ## 4. Sign in
 
@@ -96,8 +112,9 @@ instructions, then update `NEXTAUTH_URL` and redeploy.
 
 **Export to Excel** (sidebar, or `/api/export`) downloads a full multi-sheet
 `.xlsx` snapshot of every table plus the computed investor ledger — useful
-for tax filing or an off-platform backup. Vercel Postgres (built on Neon)
-also keeps automatic point-in-time backups on its own.
+for tax filing or an off-platform backup. Most managed Postgres providers
+(Neon, Supabase, Vercel Postgres) also keep automatic point-in-time backups
+on their own free tier.
 
 ## Known residual `npm audit` findings
 

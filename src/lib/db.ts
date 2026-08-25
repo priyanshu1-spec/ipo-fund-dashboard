@@ -1,51 +1,60 @@
 // ============================================================================
 // Postgres data-access layer.
 //
-// The database lives entirely inside your Vercel project (Storage tab ->
-// Create Database -> Postgres, which today provisions via Vercel's native
-// Neon integration, then "Connect Project"). Vercel injects DATABASE_URL /
-// POSTGRES_URL env vars automatically once connected — nothing to configure
-// by hand. Locally, `vercel env pull .env.local` (after connecting the store
-// in the dashboard) copies those same values down for `npm run dev`. See
-// docs/DEPLOYMENT.md.
+// Works with ANY standard Postgres connection string in DATABASE_URL (or
+// POSTGRES_URL) — Neon, Supabase, Railway, a self-hosted instance, whatever
+// you point it at. Set that one env var and you're done; see
+// docs/DEPLOYMENT.md for how to get a free connection string from a couple
+// of different providers.
 //
-// Uses @neondatabase/serverless (the client Vercel's Postgres/Neon
-// integration recommends) over an HTTP-based connection — no connection
-// pooling to manage, works well in serverless route handlers.
+// Uses a short-lived `pg` client per query rather than a long-lived pool —
+// simplest thing that works correctly across serverless function cold
+// starts, and free-tier Postgres providers cap concurrent connections low
+// enough that a persistent pool per instance can actually exhaust them for
+// an app this size faster than connect-per-query does.
 //
 // Tables are created automatically on first use (see ensureSchema below) —
 // there's no separate migration step to run.
 // ============================================================================
 
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { Client } from "pg";
 
-type SqlTag = NeonQueryFunction<false, true>;
-
-let cachedSql: SqlTag | null = null;
-
-/** Lazily creates the Neon client on first real query, not at module import — so a missing env var only breaks the request that needs the DB, not the whole build/cold start. */
-function getSqlFn(): SqlTag {
-  if (cachedSql) return cachedSql;
+function connectionString(): string {
   const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
   if (!url) {
     throw new Error(
       "No database connection string found (DATABASE_URL / POSTGRES_URL). " +
-        "Connect a Postgres store to this Vercel project — see docs/DEPLOYMENT.md."
+        "Set it to a Postgres connection string from Neon, Supabase, or another provider — see docs/DEPLOYMENT.md."
     );
   }
-  // fullResults gives back { rows, rowCount, ... } like node-postgres, matching
-  // how every repository in this app consumes query results.
-  cachedSql = neon(url, { fullResults: true });
-  return cachedSql;
+  return url;
 }
 
 export interface QueryResult {
   rows: Record<string, unknown>[];
 }
 
-/** Tagged-template query function — usage: `await sql\`SELECT ...\`` — matching every repository's call sites. */
+async function runQuery(text: string, values: unknown[]): Promise<QueryResult> {
+  const client = new Client({
+    connectionString: connectionString(),
+    ssl: { rejectUnauthorized: false },
+  });
+  await client.connect();
+  try {
+    const res = await client.query(text, values);
+    return { rows: res.rows };
+  } finally {
+    await client.end();
+  }
+}
+
+/** Tagged-template query function — usage: `await sql\`SELECT ...\`` — matching every repository's call sites. Interpolated values become $1, $2, ... parameters. */
 export function sql(strings: TemplateStringsArray, ...values: unknown[]): Promise<QueryResult> {
-  return getSqlFn()(strings, ...values) as unknown as Promise<QueryResult>;
+  let text = strings[0];
+  for (let i = 0; i < values.length; i++) {
+    text += `$${i + 1}` + strings[i + 1];
+  }
+  return runQuery(text, values);
 }
 
 let schemaReady: Promise<void> | null = null;
