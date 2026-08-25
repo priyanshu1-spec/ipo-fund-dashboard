@@ -134,9 +134,11 @@ function UserFooter() {
   return (
     <div className="mt-auto border-t border-slate-200 px-4 pt-3 dark:border-slate-800">
       <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+        {session?.user?.name ?? "Signed in"}
+      </p>
+      <p className="mb-2 text-xs capitalize text-slate-500 dark:text-slate-400">
         {role === "editor" ? "Full access" : "View only"}
       </p>
-      <p className="mb-2 text-xs capitalize text-slate-500 dark:text-slate-400">Signed in via shared password</p>
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
         className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400"

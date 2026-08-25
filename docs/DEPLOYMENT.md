@@ -19,8 +19,8 @@ Vercel deploys from a git repo.
 
    | Variable | Value |
    |---|---|
-   | `APP_ACCESS_PASSWORD` | pick a password — this is what you'll share to give someone full access |
-   | `APP_VIEWER_PASSWORD` | optional — a second password for read-only access, or leave unset |
+   | `BOOTSTRAP_ADMIN_USERNAME` | pick a username for yourself, e.g. `admin` |
+   | `BOOTSTRAP_ADMIN_PASSWORD` | pick a strong password — this always works, so you can never lock yourself out |
    | `NEXTAUTH_SECRET` | generate with `openssl rand -base64 32` |
    | `NEXTAUTH_URL` | leave blank for now — fill in after step 4 |
    | `CRON_SECRET` | any long random string |
@@ -44,20 +44,22 @@ Vercel deploys from a git repo.
 
 ## 4. Sign in
 
-Open your Vercel URL → enter the password you set as `APP_ACCESS_PASSWORD`.
-You're in with full access.
+Open your Vercel URL → sign in with `BOOTSTRAP_ADMIN_USERNAME` /
+`BOOTSTRAP_ADMIN_PASSWORD`. You're in with full access.
 
-## 5. Share it
+## 5. Give people their own access
 
-Just send people the URL and the password (the viewer password, if you set
-one, for anyone who should only look, not edit). That's the entire "give
-access" process — no invites, no accounts, no per-person setup.
+Go to **Settings → Manage Users → Add User**, pick them a username and
+password, and choose their role:
 
-**To revoke access for everyone at once**: change `APP_ACCESS_PASSWORD` (and/or
-`APP_VIEWER_PASSWORD`) in Environment Variables, then redeploy. Every existing
-session is invalidated immediately since there's no per-person allowlist to
-manage individually — see `docs/SCHEMA.md` and the in-app Settings page for
-more on this trade-off.
+- **Viewer** — read-only, can't add/edit/delete anything.
+- **Editor** — full access, including managing other users' accounts.
+
+Send them the URL plus their own username/password. To cut someone off,
+click the revoke icon next to their name (or delete their account entirely)
+— nobody else is affected. Your bootstrap admin login always keeps working
+even if every other account is revoked or deleted, so you can never lock
+yourself out.
 
 ## 6. Automated daily IPO sync (Vercel Cron)
 

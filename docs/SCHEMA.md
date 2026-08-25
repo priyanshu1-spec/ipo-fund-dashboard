@@ -52,7 +52,7 @@ rather than split between JS and Postgres.
 | lots_allotted, amount_allotted | |
 | refund_amount, refund_status, refund_date | |
 | sell_date, sell_price | once shares are sold post-listing |
-| created_by | access tier that logged it (`editor` — no individual identity, see `docs/DEPLOYMENT.md` §5) |
+| created_by | username of whoever logged it |
 | created_at, updated_at | |
 | notes | |
 
@@ -88,6 +88,20 @@ one bid part-funded by you and part by a relative.
 | status | `Active` \| `Inactive` |
 | created_at, notes | |
 
+## `users` — access control
+
+Per-person accounts (in addition to the always-working bootstrap admin
+credentials set as env vars — see `docs/DEPLOYMENT.md` §5).
+
+| Column | Notes |
+|---|---|
+| id | `user_xxxxxxxx` |
+| username | unique, case-insensitive |
+| password_hash | `salt:hash`, scrypt — see `src/lib/password.ts`. Never sent to the client. |
+| role | `editor` \| `viewer` |
+| status | `active` \| `revoked` |
+| created_by, created_at, notes | |
+
 ## `audit_log`
 
 Append-only activity trail, written automatically on every create/update/delete.
@@ -96,7 +110,7 @@ Append-only activity trail, written automatically on every create/update/delete.
 |---|---|
 | id | `log_xxxxxxxx` |
 | timestamp | |
-| actor | access tier that made the change (`editor`, or `system-cron` for automated syncs) — **not** a person's identity, since access is a shared password rather than individual accounts |
+| actor | the username that made the change (or `system-cron` for automated syncs, or your bootstrap admin username) |
 | action | e.g. `create`, `update`, `delete`, `sync` |
-| entity_type | e.g. `IPO`, `Application`, `FundAllocation`, `Investor` |
+| entity_type | e.g. `IPO`, `Application`, `FundAllocation`, `Investor`, `User` |
 | entity_id, details | |

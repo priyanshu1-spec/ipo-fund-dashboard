@@ -1,42 +1,41 @@
 import type { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { findUserByUsername } from "@/lib/repositories/users";
+import { verifyPassword } from "@/lib/password";
 import type { UserRole } from "@/types";
 
 /**
- * Access is a shared password rather than individual Google accounts — no
- * external console setup required. Two independent, optional passwords:
- *   APP_ACCESS_PASSWORD  -> full access (add/edit/delete everything)
- *   APP_VIEWER_PASSWORD  -> read-only access (optional; give this one to
- *                           someone you only want to see the dashboard)
- * Only APP_ACCESS_PASSWORD is required. To revoke everyone at once, change
- * it in your hosting provider's env vars and redeploy — every existing
- * session is invalidated on next request.
+ * Per-person accounts, stored in the app's own database (no external
+ * identity provider). BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD
+ * always work regardless of what's in the database — that's what guarantees
+ * the owner can never be locked out, and is how you log in the very first
+ * time (before any users exist) to then create real accounts under
+ * Settings -> Manage Users.
  */
 export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Password",
+      name: "Credentials",
       credentials: {
+        username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        const username = credentials?.username?.trim() ?? "";
         const password = credentials?.password ?? "";
-        const editorPassword = process.env.APP_ACCESS_PASSWORD;
-        const viewerPassword = process.env.APP_VIEWER_PASSWORD;
+        if (!username || !password) return null;
 
-        if (!editorPassword) {
-          throw new Error(
-            "APP_ACCESS_PASSWORD is not configured on the server. See docs/DEPLOYMENT.md."
-          );
+        const bootstrapUser = process.env.BOOTSTRAP_ADMIN_USERNAME;
+        const bootstrapPass = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+        if (bootstrapUser && bootstrapPass && username === bootstrapUser && password === bootstrapPass) {
+          return { id: "bootstrap-admin", name: username, role: "editor" as UserRole };
         }
 
-        if (password && password === editorPassword) {
-          return { id: "editor", name: "Full access", role: "editor" as UserRole };
-        }
-        if (viewerPassword && password && password === viewerPassword) {
-          return { id: "viewer", name: "View only", role: "viewer" as UserRole };
-        }
-        return null;
+        const user = await findUserByUsername(username);
+        if (!user || user.status !== "active") return null;
+        if (!verifyPassword(password, user.passwordHash)) return null;
+
+        return { id: user.id, name: user.username, role: user.role };
       },
     }),
   ],
@@ -49,12 +48,14 @@ export const authOptions: AuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.role = (user as unknown as { role: UserRole }).role;
+        token.name = user.name;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.role = token.role as UserRole;
+        session.user.name = token.name;
       }
       return session;
     },

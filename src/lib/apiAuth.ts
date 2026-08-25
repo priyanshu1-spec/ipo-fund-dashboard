@@ -28,7 +28,7 @@ export async function requireApiAuth(
   if (minRole && RANK[role] < RANK[minRole]) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
-  return { session, role, actor: role };
+  return { session, role, actor: session.user?.name || role };
 }
 
 export function isAuthedContext(x: AuthedContext | NextResponse): x is AuthedContext {

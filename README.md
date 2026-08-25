@@ -2,8 +2,9 @@
 
 A private IPO tracking and multi-account fund allocation dashboard. Next.js
 14 (App Router) + TypeScript + Tailwind CSS on the frontend, Vercel Postgres
-as the database, and a simple shared password for access — everything
-deploys and configures from one place (Vercel), free.
+as the database, and per-person accounts (username + password, managed
+in-app) for access — everything deploys and configures from one place
+(Vercel), free.
 
 ## What it does
 
@@ -20,8 +21,10 @@ deploys and configures from one place (Vercel), free.
 - **Dashboard** — active bids, blocked capital (self vs. third-party split),
   pending allotments, GMP-based estimated profit, monthly realised P&L chart,
   duplicate-PAN warnings, upcoming/closing-soon IPOs.
-- **Access control** — a shared password (optionally two: full-access and
-  read-only), no accounts to create, plus a full audit log of every change.
+- **Access control** — per-person username/password accounts managed from an
+  in-app Settings page (add, change role, revoke, delete), plus a bootstrap
+  admin login (env vars) that always works so you can never lock yourself
+  out, and a full audit log of every change labeled by who did it.
 - **Excel export**.
 
 ## Quick start (local dev)
@@ -32,8 +35,9 @@ vercel link && vercel env pull .env.local   # after connecting Postgres — see 
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), enter the password you
-set as `APP_ACCESS_PASSWORD`.
+Open [http://localhost:3000](http://localhost:3000), sign in with
+`BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD`, then create real
+accounts for anyone else under **Settings → Manage Users**.
 
 ## Documentation
 
@@ -53,14 +57,15 @@ src/
       applications/    # Module B — Application Ledger
       funds/           # Module C — Fund Allocation
       investors/       # Investor Master + live ledger
-      settings/        # Access info + audit log (full-access tier only)
+      settings/        # Manage Users + audit log (editors only)
     login/
     api/               # REST-ish route handlers, one per resource
   components/          # Reusable UI (AppShell, Modal, MetricCard, ...)
   lib/
     db.ts                # Postgres client + auto schema creation
-    repositories/         # typed CRUD per entity, built on db.ts
-    auth.ts, apiAuth.ts     # NextAuth (shared-password Credentials provider) + API route guard
+    password.ts            # scrypt password hashing
+    repositories/            # typed CRUD per entity, built on db.ts
+    auth.ts, apiAuth.ts        # NextAuth (per-user Credentials provider) + API route guard
     calculations.ts          # dashboard/ledger/profit math
     scraper.ts                # best-effort automated IPO data fetch
   types/                # shared TypeScript types
@@ -74,11 +79,11 @@ src/
   version (browse/edit data as a normal spreadsheet, Google Sign-In per
   person with roles), that's a straightforward variant to build instead —
   just ask.
-- **Shared password, not per-person accounts** — the simplest possible "give
-  someone access" model: send a link and a password, done. The trade-off is
-  no individual identity or per-person revocation — revoking means rotating
-  the password for everyone. That trade was made deliberately for minimum
-  setup friction; see `docs/DEPLOYMENT.md` §5.
+- **Per-person accounts stored in the app's own database, not an external
+  identity provider** — real access management (add/revoke/change role per
+  person, see who did what in the audit log) without any external console.
+  A bootstrap admin login (env vars) always works underneath, so you can
+  never lock yourself out even if every account gets deleted.
 - **IPO data sync is best-effort by design** — no free, stable public API for
   Indian IPO data exists. The scraper is a heuristic table parser (see
   `src/lib/scraper.ts` for the full reasoning) meant to save typing, not to be
@@ -89,8 +94,9 @@ src/
 
 Already built in, beyond the original spec:
 
-- **Two access tiers** (full vs. read-only) so you can hand a CA or spouse a
-  view-only link without risking accidental edits.
+- **Per-person accounts with two roles** (editor vs. viewer) so you can hand
+  a CA or spouse their own read-only login without risking accidental edits,
+  and revoke just their access without touching anyone else's.
 - **Duplicate-PAN detection** — SEBI rejects multiple retail applications
   under the same PAN for one IPO; the dashboard flags it before it becomes a
   refund headache.
@@ -103,5 +109,4 @@ Already built in, beyond the original spec:
 - **Dark/light theme** with persisted preference.
 - **Bulk JSON import** for IPO data as a robust fallback when automated
   scraping inevitably breaks on a site redesign.
-- **Audit log** of every create/update/delete, even without per-person
-  accounts.
+- **Audit log** of every create/update/delete, labeled with which user did it.

@@ -5,6 +5,18 @@
 
 export type UserRole = "editor" | "viewer";
 
+export interface UserAccountRow {
+  id: string;
+  username: string;
+  /** Never sent to the client — stripped before any API response. */
+  passwordHash: string;
+  role: UserRole;
+  status: "active" | "revoked";
+  createdBy: string;
+  createdAt: string;
+  notes?: string;
+}
+
 export type IpoType = "Mainboard" | "SME";
 
 export type IpoStatus =
