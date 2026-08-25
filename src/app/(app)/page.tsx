@@ -29,7 +29,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, daysUntil, IPO_STATUS_COLORS } from "@/lib/utils";
 import type { DashboardSummary, IpoRow } from "@/types";
 
-const PIE_COLORS = ["#2563eb", "#f59e0b"];
+const PIE_COLORS = ["#6366f1", "#f43f5e"];
 
 export default function DashboardPage() {
   const { data: summaryData, isLoading: loadingSummary } = useSWR<{
@@ -80,7 +80,7 @@ export default function DashboardPage() {
           label="Total Active Bids"
           value={loadingSummary ? "—" : String(summary?.totalActiveBids ?? 0)}
           icon={ListChecks}
-          accent="brand"
+          accent="sky"
         />
         <MetricCard
           label="Total Blocked Capital"
@@ -142,7 +142,7 @@ export default function DashboardPage() {
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                <Bar dataKey="profit" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="profit" fill="#6366f1" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (

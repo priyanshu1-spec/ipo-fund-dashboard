@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               active
-                ? "bg-brand-600 text-white"
+                ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow-sm"
                 : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             )}
           >
@@ -63,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className={cn(
             "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
             pathname === "/settings"
-              ? "bg-brand-600 text-white"
+              ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow-sm"
               : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
           )}
         >
@@ -85,9 +85,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       {/* Desktop sidebar */}
       <aside className="hidden w-64 flex-col border-r border-slate-200 bg-white py-4 dark:border-slate-800 dark:bg-slate-900 md:flex">
-        <div className="mb-4 px-4">
-          <h1 className="text-base font-bold text-slate-900 dark:text-white">IPO Fund Dashboard</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Personal Portfolio Tracker</p>
+        <div className="mb-4 flex items-center gap-2.5 px-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white shadow-sm">
+            <TrendingUp size={18} />
+          </div>
+          <div>
+            <h1 className="text-base font-bold leading-tight text-slate-900 dark:text-white">IPO Fund Dashboard</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Personal Portfolio Tracker</p>
+          </div>
         </div>
         {navLinks}
         <UserFooter />

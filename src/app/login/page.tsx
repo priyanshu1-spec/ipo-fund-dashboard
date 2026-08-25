@@ -33,7 +33,7 @@ function LoginCard() {
 
   return (
     <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-card dark:border-slate-800 dark:bg-slate-900">
-      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-white">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white">
         <TrendingUp size={24} />
       </div>
       <h1 className="text-lg font-bold text-slate-900 dark:text-white">IPO Fund Dashboard</h1>

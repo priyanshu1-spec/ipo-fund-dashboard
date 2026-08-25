@@ -121,13 +121,17 @@ export default function IposPage() {
         "POST",
         {}
       );
-      setSyncMessage(
-        `Synced: ${result.created} created, ${result.updated} updated.` +
-          (result.errors?.length
-            ? ` ${result.errors.length} source(s) failed: ` +
-              result.errors.map((e) => `${e.url} — ${e.message}`).join("; ")
-            : "")
-      );
+      const gotAnything = result.created > 0 || result.updated > 0;
+      if (gotAnything) {
+        setSyncMessage(`Synced: ${result.created} added, ${result.updated} updated just now.`);
+      } else if (result.errors?.length) {
+        setSyncMessage(
+          "Automatic fetch isn't available from that source right now (the site may be blocking automated visits). " +
+            "No problem — just use \"Add IPO\" or \"Bulk Import\" below to enter it yourself, it only takes a moment."
+        );
+      } else {
+        setSyncMessage("No new IPOs found. Everything here is already up to date.");
+      }
       await mutate();
     } catch (err) {
       setSyncMessage(err instanceof Error ? err.message : "Sync failed");

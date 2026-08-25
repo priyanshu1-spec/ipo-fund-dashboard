@@ -142,7 +142,17 @@ export async function syncIposFromSources(
   for (const source of sources) {
     try {
       const res = await fetch(source.url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; IpoFundDashboard/1.0)" },
+        // Headers modeled on a real desktop browser — some sites reject
+        // requests that look scripted (missing Accept/Accept-Language, an
+        // obviously non-browser User-Agent) even without a full bot-check
+        // challenge. This won't get past JS-rendered pages or hard
+        // CAPTCHA/Cloudflare-style challenges — nothing server-side can.
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
         // 15s timeout via AbortSignal so one slow source can't hang the whole sync.
         signal: AbortSignal.timeout(15_000),
       });

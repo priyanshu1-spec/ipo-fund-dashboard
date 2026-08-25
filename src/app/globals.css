@@ -38,13 +38,13 @@ body {
     @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+    @apply btn bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow-sm transition-all hover:from-indigo-500 hover:to-fuchsia-500 hover:shadow-md;
   }
   .btn-secondary {
     @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700;
+    @apply btn bg-gradient-to-r from-rose-600 to-red-600 text-white hover:from-rose-500 hover:to-red-500;
   }
   .input {
     @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100;
