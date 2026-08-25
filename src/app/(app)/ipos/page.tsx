@@ -123,7 +123,10 @@ export default function IposPage() {
       );
       setSyncMessage(
         `Synced: ${result.created} created, ${result.updated} updated.` +
-          (result.errors?.length ? ` ${result.errors.length} source(s) failed.` : "")
+          (result.errors?.length
+            ? ` ${result.errors.length} source(s) failed: ` +
+              result.errors.map((e) => `${e.url} — ${e.message}`).join("; ")
+            : "")
       );
       await mutate();
     } catch (err) {
