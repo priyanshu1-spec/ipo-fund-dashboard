@@ -5,9 +5,12 @@ import type { UserRole } from "@/types";
 
 export interface AuthedContext {
   session: Session;
-  email: string;
   role: UserRole;
+  /** Label to record in the audit log — there's no individual identity under shared-password access, just the role that was used. */
+  actor: string;
 }
+
+const RANK: Record<UserRole, number> = { viewer: 0, editor: 1 };
 
 /**
  * Guards an API route handler. Returns either an AuthedContext (caller is
@@ -15,21 +18,17 @@ export interface AuthedContext {
  * NextResponse to return immediately (401/403).
  */
 export async function requireApiAuth(
-  minRole?: "viewer" | "editor" | "admin"
+  minRole?: UserRole
 ): Promise<AuthedContext | NextResponse> {
   const session = await getServerSession(authOptions);
-  const email = session?.user?.email;
-  if (!session || !email) {
+  const role = session?.user?.role;
+  if (!session || !role) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-  const role = (session.user?.role ?? "viewer") as UserRole;
-  if (minRole) {
-    const rank: Record<UserRole, number> = { viewer: 0, editor: 1, admin: 2 };
-    if (rank[role] < rank[minRole]) {
-      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
-    }
+  if (minRole && RANK[role] < RANK[minRole]) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
-  return { session, email, role };
+  return { session, role, actor: role };
 }
 
 export function isAuthedContext(x: AuthedContext | NextResponse): x is AuthedContext {

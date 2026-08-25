@@ -34,6 +34,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const investor = await createInvestor(parsed.data);
-  await logAudit(auth.email, "create", "Investor", investor.id, investor.name);
+  await logAudit(auth.actor, "create", "Investor", investor.id, investor.name);
   return NextResponse.json({ investor }, { status: 201 });
 }

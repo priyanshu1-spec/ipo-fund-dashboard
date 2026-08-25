@@ -1,10 +1,9 @@
-import { appendRow, readAllRows } from "@/lib/googleSheets";
-import { AUDIT_LOG_HEADERS, TABS } from "@/lib/sheetSchemas";
+import { ensureSchema, sql } from "@/lib/db";
 import { generateId } from "@/lib/id";
 import type { AuditLogRow } from "@/types";
 
 export async function logAudit(
-  actorEmail: string,
+  actor: string,
   action: string,
   entityType: string,
   entityId: string,
@@ -13,7 +12,7 @@ export async function logAudit(
   const row: AuditLogRow = {
     id: generateId("log"),
     timestamp: new Date().toISOString(),
-    actorEmail,
+    actor,
     action,
     entityType,
     entityId,
@@ -21,24 +20,28 @@ export async function logAudit(
   };
   // Audit logging must never block or fail the primary request.
   try {
-    await appendRow(TABS.AUDIT_LOG, AUDIT_LOG_HEADERS, row);
+    await ensureSchema();
+    await sql`
+      INSERT INTO audit_log (id, "timestamp", actor, action, entity_type, entity_id, details)
+      VALUES (${row.id}, ${row.timestamp}, ${row.actor}, ${row.action}, ${row.entityType}, ${row.entityId}, ${row.details})
+    `;
   } catch (err) {
     console.error("Failed to write audit log entry:", err);
   }
 }
 
 export async function listRecentAuditLog(limit = 200): Promise<AuditLogRow[]> {
-  const rows = await readAllRows(TABS.AUDIT_LOG, AUDIT_LOG_HEADERS);
-  return rows
-    .map((r) => ({
-      id: String(r.id ?? ""),
-      timestamp: String(r.timestamp ?? ""),
-      actorEmail: String(r.actorEmail ?? ""),
-      action: String(r.action ?? ""),
-      entityType: String(r.entityType ?? ""),
-      entityId: String(r.entityId ?? ""),
-      details: String(r.details ?? ""),
-    }))
-    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
-    .slice(0, limit);
+  await ensureSchema();
+  const { rows } = await sql`
+    SELECT * FROM audit_log ORDER BY "timestamp" DESC LIMIT ${limit}
+  `;
+  return rows.map((r: Record<string, unknown>) => ({
+    id: String(r.id ?? ""),
+    timestamp: String(r.timestamp ?? ""),
+    actor: String(r.actor ?? ""),
+    action: String(r.action ?? ""),
+    entityType: String(r.entity_type ?? ""),
+    entityId: String(r.entity_id ?? ""),
+    details: String(r.details ?? ""),
+  }));
 }

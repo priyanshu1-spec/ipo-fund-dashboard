@@ -1,19 +1,34 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { TrendingUp } from "lucide-react";
 
 function LoginCard() {
   const { status } = useSession();
   const router = useRouter();
-  const params = useSearchParams();
-  const error = params.get("error");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (status === "authenticated") router.replace("/");
   }, [status, router]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    const result = await signIn("credentials", { password, redirect: false });
+    setSubmitting(false);
+    if (result?.error) {
+      setError("Wrong password. Ask whoever gave you access to double-check it.");
+      return;
+    }
+    router.replace("/");
+    router.refresh();
+  }
 
   return (
     <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-card dark:border-slate-800 dark:bg-slate-900">
@@ -22,19 +37,31 @@ function LoginCard() {
       </div>
       <h1 className="text-lg font-bold text-slate-900 dark:text-white">IPO Fund Dashboard</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Private access only. Sign in with the Google account that has been granted access.
+        Private access only. Enter the access password you were given.
       </p>
 
-      {error && (
-        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
-          Sign-in failed or your account does not have access yet. Ask the dashboard owner to add
-          your email in Settings → Access.
-        </p>
-      )}
-
-      <button onClick={() => signIn("google", { callbackUrl: "/" })} className="btn-primary mt-6 w-full">
-        Sign in with Google
-      </button>
+      <form onSubmit={handleSubmit} className="mt-6 space-y-3 text-left">
+        <div>
+          <label className="label">Password</label>
+          <input
+            type="password"
+            required
+            autoFocus
+            className="input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+          />
+        </div>
+        {error && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="btn-primary w-full" disabled={submitting || !password}>
+          {submitting ? "Checking…" : "Enter"}
+        </button>
+      </form>
     </div>
   );
 }

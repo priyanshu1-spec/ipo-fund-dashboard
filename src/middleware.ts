@@ -7,10 +7,8 @@ export default withAuth({
 });
 
 export const config = {
-  // Protect every page except the login/access-denied screens, all API routes
-  // (each one enforces auth itself via requireApiAuth so it can return clean
-  // 401/403 JSON instead of an HTML redirect), and static assets.
-  matcher: [
-    "/((?!login|access-denied|api|_next/static|_next/image|favicon.ico).*)",
-  ],
+  // Protect every page except the login screen, all API routes (each one
+  // enforces auth itself via requireApiAuth so it can return clean 401/403
+  // JSON instead of an HTML redirect), and static assets.
+  matcher: ["/((?!login|api|_next/static|_next/image|favicon.ico).*)"],
 };

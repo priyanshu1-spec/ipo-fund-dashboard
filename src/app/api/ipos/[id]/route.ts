@@ -17,7 +17,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const patch = await req.json();
   try {
     const ipo = await updateIpo(params.id, patch);
-    await logAudit(auth.email, "update", "IPO", ipo.id, ipo.name);
+    await logAudit(auth.actor, "update", "IPO", ipo.id, ipo.name);
     return NextResponse.json({ ipo });
   } catch (err) {
     return NextResponse.json(
@@ -28,9 +28,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const auth = await requireApiAuth("admin");
+  const auth = await requireApiAuth("editor");
   if (!isAuthedContext(auth)) return auth;
   await deleteIpo(params.id);
-  await logAudit(auth.email, "delete", "IPO", params.id, "");
+  await logAudit(auth.actor, "delete", "IPO", params.id, "");
   return NextResponse.json({ ok: true });
 }

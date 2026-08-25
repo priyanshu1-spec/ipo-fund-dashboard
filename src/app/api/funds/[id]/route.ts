@@ -9,7 +9,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const patch = await req.json();
   try {
     const fund = await updateFundAllocation(params.id, patch);
-    await logAudit(auth.email, "update", "FundAllocation", fund.id, fund.ipoName);
+    await logAudit(auth.actor, "update", "FundAllocation", fund.id, fund.ipoName);
     return NextResponse.json({ fund });
   } catch (err) {
     return NextResponse.json(
@@ -20,9 +20,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const auth = await requireApiAuth("admin");
+  const auth = await requireApiAuth("editor");
   if (!isAuthedContext(auth)) return auth;
   await deleteFundAllocation(params.id);
-  await logAudit(auth.email, "delete", "FundAllocation", params.id, "");
+  await logAudit(auth.actor, "delete", "FundAllocation", params.id, "");
   return NextResponse.json({ ok: true });
 }

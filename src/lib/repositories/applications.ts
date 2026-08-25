@@ -1,51 +1,53 @@
-import { appendRow, deleteRow, readAllRows, updateRow } from "@/lib/googleSheets";
-import { APPLICATION_HEADERS, TABS } from "@/lib/sheetSchemas";
+import { ensureSchema, sql } from "@/lib/db";
 import { generateId, num } from "@/lib/id";
 import type { ApplicationRow } from "@/types";
 
 function toApplication(r: Record<string, unknown>): ApplicationRow {
   return {
     id: String(r.id ?? ""),
-    ipoId: String(r.ipoId ?? ""),
-    ipoName: String(r.ipoName ?? ""),
-    appliedInNameOf: String(r.appliedInNameOf ?? ""),
-    investorId: String(r.investorId ?? ""),
-    panMasked: String(r.panMasked ?? ""),
-    applicationNumber: String(r.applicationNumber ?? ""),
-    upiId: String(r.upiId ?? ""),
+    ipoId: String(r.ipo_id ?? ""),
+    ipoName: String(r.ipo_name ?? ""),
+    appliedInNameOf: String(r.applied_in_name_of ?? ""),
+    investorId: String(r.investor_id ?? ""),
+    panMasked: String(r.pan_masked ?? ""),
+    applicationNumber: String(r.application_number ?? ""),
+    upiId: String(r.upi_id ?? ""),
     category: (r.category as ApplicationRow["category"]) || "Retail",
-    lotsApplied: num(r.lotsApplied),
-    amountBlocked: num(r.amountBlocked),
-    paymentMode: (r.paymentMode as ApplicationRow["paymentMode"]) || "UPI",
-    allotmentStatus: (r.allotmentStatus as ApplicationRow["allotmentStatus"]) || "Pending",
-    lotsAllotted: num(r.lotsAllotted),
-    amountAllotted: num(r.amountAllotted),
-    refundAmount: num(r.refundAmount),
-    refundStatus: (r.refundStatus as ApplicationRow["refundStatus"]) || "N/A",
-    refundDate: String(r.refundDate ?? ""),
-    sellDate: String(r.sellDate ?? ""),
-    sellPrice: num(r.sellPrice),
-    createdBy: String(r.createdBy ?? ""),
-    createdAt: String(r.createdAt ?? ""),
-    updatedAt: String(r.updatedAt ?? ""),
+    lotsApplied: num(r.lots_applied),
+    amountBlocked: num(r.amount_blocked),
+    paymentMode: (r.payment_mode as ApplicationRow["paymentMode"]) || "UPI",
+    allotmentStatus: (r.allotment_status as ApplicationRow["allotmentStatus"]) || "Pending",
+    lotsAllotted: num(r.lots_allotted),
+    amountAllotted: num(r.amount_allotted),
+    refundAmount: num(r.refund_amount),
+    refundStatus: (r.refund_status as ApplicationRow["refundStatus"]) || "N/A",
+    refundDate: String(r.refund_date ?? ""),
+    sellDate: String(r.sell_date ?? ""),
+    sellPrice: num(r.sell_price),
+    createdBy: String(r.created_by ?? ""),
+    createdAt: String(r.created_at ?? ""),
+    updatedAt: String(r.updated_at ?? ""),
     notes: String(r.notes ?? ""),
   };
 }
 
 export async function listApplications(): Promise<ApplicationRow[]> {
-  const rows = await readAllRows(TABS.APPLICATIONS, APPLICATION_HEADERS);
-  return rows.map(toApplication).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM applications ORDER BY created_at DESC NULLS LAST`;
+  return rows.map(toApplication);
 }
 
 export async function getApplication(id: string): Promise<ApplicationRow | undefined> {
-  const rows = await listApplications();
-  return rows.find((r) => r.id === id);
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM applications WHERE id = ${id}`;
+  return rows[0] ? toApplication(rows[0]) : undefined;
 }
 
 export async function createApplication(
   input: Partial<ApplicationRow>,
   createdBy: string
 ): Promise<ApplicationRow> {
+  await ensureSchema();
   const now = new Date().toISOString();
   const app: ApplicationRow = {
     id: generateId("app"),
@@ -73,7 +75,20 @@ export async function createApplication(
     updatedAt: now,
     notes: input.notes ?? "",
   };
-  await appendRow(TABS.APPLICATIONS, APPLICATION_HEADERS, app);
+  await sql`
+    INSERT INTO applications (
+      id, ipo_id, ipo_name, applied_in_name_of, investor_id, pan_masked, application_number,
+      upi_id, category, lots_applied, amount_blocked, payment_mode, allotment_status,
+      lots_allotted, amount_allotted, refund_amount, refund_status, refund_date, sell_date,
+      sell_price, created_by, created_at, updated_at, notes
+    ) VALUES (
+      ${app.id}, ${app.ipoId}, ${app.ipoName}, ${app.appliedInNameOf}, ${app.investorId},
+      ${app.panMasked}, ${app.applicationNumber}, ${app.upiId}, ${app.category}, ${app.lotsApplied},
+      ${app.amountBlocked}, ${app.paymentMode}, ${app.allotmentStatus}, ${app.lotsAllotted},
+      ${app.amountAllotted}, ${app.refundAmount}, ${app.refundStatus}, ${app.refundDate},
+      ${app.sellDate}, ${app.sellPrice}, ${app.createdBy}, ${app.createdAt}, ${app.updatedAt}, ${app.notes}
+    )
+  `;
   return app;
 }
 
@@ -81,30 +96,36 @@ export async function updateApplication(
   id: string,
   patch: Partial<ApplicationRow>
 ): Promise<ApplicationRow> {
-  const rows = await readAllRows(TABS.APPLICATIONS, APPLICATION_HEADERS);
-  const existing = rows.find((r) => r.id === id);
+  await ensureSchema();
+  const existing = await getApplication(id);
   if (!existing) throw new Error(`Application ${id} not found`);
-  const merged = {
-    ...toApplication(existing),
-    ...patch,
-    id,
-    updatedAt: new Date().toISOString(),
-  };
-  await updateRow(TABS.APPLICATIONS, APPLICATION_HEADERS, existing._rowNumber, merged);
+  const merged: ApplicationRow = { ...existing, ...patch, id, updatedAt: new Date().toISOString() };
+  await sql`
+    UPDATE applications SET
+      ipo_id = ${merged.ipoId}, ipo_name = ${merged.ipoName},
+      applied_in_name_of = ${merged.appliedInNameOf}, investor_id = ${merged.investorId},
+      pan_masked = ${merged.panMasked}, application_number = ${merged.applicationNumber},
+      upi_id = ${merged.upiId}, category = ${merged.category}, lots_applied = ${merged.lotsApplied},
+      amount_blocked = ${merged.amountBlocked}, payment_mode = ${merged.paymentMode},
+      allotment_status = ${merged.allotmentStatus}, lots_allotted = ${merged.lotsAllotted},
+      amount_allotted = ${merged.amountAllotted}, refund_amount = ${merged.refundAmount},
+      refund_status = ${merged.refundStatus}, refund_date = ${merged.refundDate},
+      sell_date = ${merged.sellDate}, sell_price = ${merged.sellPrice}, updated_at = ${merged.updatedAt},
+      notes = ${merged.notes}
+    WHERE id = ${id}
+  `;
   return merged;
 }
 
 export async function deleteApplication(id: string): Promise<void> {
-  const rows = await readAllRows(TABS.APPLICATIONS, APPLICATION_HEADERS);
-  const existing = rows.find((r) => r.id === id);
-  if (!existing) return;
-  await deleteRow(TABS.APPLICATIONS, existing._rowNumber);
+  await ensureSchema();
+  await sql`DELETE FROM applications WHERE id = ${id}`;
 }
 
 /**
  * SEBI-style safeguard: flags when the same PAN is used for more than one
- * Retail-category application within the same IPO (which regulators reject
- * as a duplicate application and both get rejected).
+ * application within the same IPO (regulators reject duplicate retail
+ * applications and both get rejected).
  */
 export function findDuplicatePanWarnings(
   applications: ApplicationRow[]

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const application = await createApplication(parsed.data, auth.email);
-  await logAudit(auth.email, "create", "Application", application.id, application.ipoName);
+  const application = await createApplication(parsed.data, auth.actor);
+  await logAudit(auth.actor, "create", "Application", application.id, application.ipoName);
   return NextResponse.json({ application }, { status: 201 });
 }

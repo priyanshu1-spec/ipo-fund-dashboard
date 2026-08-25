@@ -1,135 +1,102 @@
-# Google Sheet Schema
+# Database Schema (Vercel Postgres)
 
-The app treats one Google Spreadsheet as its database. Each tab below is
-created automatically (with the exact header row shown) the first time the
-app writes to it — you never have to create these by hand. This doc exists so
-you can read the raw sheet, write your own formulas/pivot tables against it,
-or restore from a backup with confidence about column meaning.
+Tables are created automatically on first use (see
+[`src/lib/db.ts`](../src/lib/db.ts)) — you never run a migration by hand.
+This doc exists so you can query the database directly (Vercel dashboard →
+Storage → your database → Data/Query tab) with confidence about column
+meaning.
 
-The single source of truth for tab names and headers in code is
-[`src/lib/sheetSchemas.ts`](../src/lib/sheetSchemas.ts) — if you ever change a
-header there, update this file to match.
+All money/quantity columns are `NUMERIC`. All date/timestamp columns are
+plain `TEXT` holding ISO strings (`yyyy-MM-dd` for dates, full ISO 8601 for
+timestamps) — kept as text rather than native `DATE`/`TIMESTAMP` types so the
+app's own formatting/timezone logic stays in one place (`src/lib/utils.ts`)
+rather than split between JS and Postgres.
 
 ---
 
-## `IPO_Master_Data` — Module A
+## `ipos` — Module A
 
-| Column | Type | Notes |
-|---|---|---|
-| id | string | `ipo_xxxxxxxx` |
-| name | string | |
-| type | `Mainboard` \| `SME` | |
-| openDate | date (`yyyy-MM-dd`) | |
-| closeDate | date | |
-| allotmentDate | date | |
-| refundDate | date | |
-| listingDate | date | |
-| priceBandMin | number (₹) | |
-| priceBandMax | number (₹) | |
-| lotSize | number (shares) | |
-| issueSize | string | free text, e.g. "₹450 Cr" |
-| status | `Upcoming` \| `Open` \| `Closed` \| `Allotment Awaited` \| `Allotted` \| `Listed` | |
-| gmp | number (₹ per share) | manual or auto-synced Grey Market Premium |
-| gmpUpdatedAt | ISO timestamp | |
-| listingPrice | number \| blank | filled once actually listed |
-| exchange | string | e.g. "NSE / BSE" |
-| sourceUrl | string | where this row was scraped/imported from |
-| lastSyncedAt | ISO timestamp | |
-| notes | string | |
+| Column | Notes |
+|---|---|
+| id | `ipo_xxxxxxxx` |
+| name | |
+| type | `Mainboard` \| `SME` |
+| open_date, close_date, allotment_date, refund_date, listing_date | |
+| price_band_min, price_band_max | ₹ |
+| lot_size | shares |
+| issue_size | free text, e.g. "₹450 Cr" |
+| status | `Upcoming` \| `Open` \| `Closed` \| `Allotment Awaited` \| `Allotted` \| `Listed` |
+| gmp | ₹ per share — manual or auto-synced Grey Market Premium |
+| gmp_updated_at | |
+| listing_price | nullable, filled once actually listed |
+| exchange | e.g. "NSE / BSE" |
+| source_url | where this row was scraped/imported from |
+| last_synced_at | |
+| notes | |
 
-## `Application_Ledger` — Module B
+## `applications` — Module B
 
-| Column | Type | Notes |
-|---|---|---|
-| id | string | `app_xxxxxxxx` |
-| ipoId | string | FK → `IPO_Master_Data.id` |
-| ipoName | string | denormalized for readability |
-| appliedInNameOf | string | Demat account holder label |
-| investorId | string | FK → `Investor_Master.id` |
-| panMasked | string | PAN of the applicant |
-| applicationNumber | string | |
-| upiId | string | |
-| category | `Retail` \| `HNI (sHNI)` \| `bHNI` \| `Shareholder` \| `Employee` | |
-| lotsApplied | number | |
-| amountBlocked | number (₹) | ASBA/UPI blocked amount |
-| paymentMode | `ASBA` \| `UPI` | |
-| allotmentStatus | `Pending` \| `Allotted` \| `Not Allotted` \| `Partial` | |
-| lotsAllotted | number | |
-| amountAllotted | number (₹) | |
-| refundAmount | number (₹) | |
-| refundStatus | `N/A` \| `Pending` \| `Received` | |
-| refundDate | date | |
-| sellDate | date | once shares are sold post-listing |
-| sellPrice | number (₹ per share) | |
-| createdBy | string | email of who logged it |
-| createdAt | ISO timestamp | |
-| updatedAt | ISO timestamp | |
-| notes | string | |
+| Column | Notes |
+|---|---|
+| id | `app_xxxxxxxx` |
+| ipo_id | FK → `ipos.id` |
+| ipo_name | denormalized for readability |
+| applied_in_name_of | Demat account holder label |
+| investor_id | FK → `investors.id` |
+| pan_masked | PAN of the applicant |
+| application_number, upi_id | |
+| category | `Retail` \| `HNI (sHNI)` \| `bHNI` \| `Shareholder` \| `Employee` |
+| lots_applied, amount_blocked | ASBA/UPI blocked amount |
+| payment_mode | `ASBA` \| `UPI` |
+| allotment_status | `Pending` \| `Allotted` \| `Not Allotted` \| `Partial` |
+| lots_allotted, amount_allotted | |
+| refund_amount, refund_status, refund_date | |
+| sell_date, sell_price | once shares are sold post-listing |
+| created_by | access tier that logged it (`editor` — no individual identity, see `docs/DEPLOYMENT.md` §5) |
+| created_at, updated_at | |
+| notes | |
 
-## `Fund_Allocation` — Module C
+## `fund_allocations` — Module C
 
-| Column | Type | Notes |
-|---|---|---|
-| id | string | `fund_xxxxxxxx` |
-| applicationId | string | FK → `Application_Ledger.id` |
-| ipoName | string | denormalized |
-| investorId | string | FK → `Investor_Master.id` — who the capital came from |
-| investorName | string | denormalized |
-| source | `Self` \| `Third-Party` | |
-| amountContributed | number (₹) | |
-| dateReceived | date | |
-| repaymentBankAccount | string | where to repay this contributor |
-| amountRepaid | number (₹) | |
-| repaymentDate | date | |
-| profitShareAmount | number (₹) | this investor's share of realised profit |
-| profitShareStatus | `N/A` \| `Pending` \| `Settled` | |
-| createdAt | ISO timestamp | |
-| notes | string | |
+| Column | Notes |
+|---|---|
+| id | `fund_xxxxxxxx` |
+| application_id | FK → `applications.id` |
+| ipo_name | denormalized |
+| investor_id | FK → `investors.id` — who the capital came from |
+| investor_name | denormalized |
+| source | `Self` \| `Third-Party` |
+| amount_contributed, date_received | |
+| repayment_bank_account | where to repay this contributor |
+| amount_repaid, repayment_date | |
+| profit_share_amount, profit_share_status | `N/A` \| `Pending` \| `Settled` |
+| created_at, notes | |
 
-One `Application_Ledger` row can have **multiple** `Fund_Allocation` rows —
-e.g. one bid part-funded by you and part by a relative.
+One `applications` row can have **multiple** `fund_allocations` rows — e.g.
+one bid part-funded by you and part by a relative.
 
-## `Investor_Master` — Module D
+## `investors` — Module D
 
-| Column | Type | Notes |
-|---|---|---|
-| id | string | `inv_xxxxxxxx` |
-| name | string | |
-| relationship | string | Self / Spouse / Parent / Client / Friend etc. |
-| phone | string | |
-| email | string | |
-| defaultBankAccount | string | used as the default repayment account |
-| defaultBankIfsc | string | |
-| demandAccountNumber | string | Demat account number |
-| panMasked | string | |
-| status | `Active` \| `Inactive` | |
-| createdAt | ISO timestamp | |
-| notes | string | |
+| Column | Notes |
+|---|---|
+| id | `inv_xxxxxxxx` |
+| name, relationship | e.g. Self / Spouse / Parent / Client / Friend |
+| phone, email | |
+| default_bank_account, default_bank_ifsc | used as the default repayment account |
+| demand_account_number | Demat account number |
+| pan_masked | |
+| status | `Active` \| `Inactive` |
+| created_at, notes | |
 
-## `Access_Control`
-
-Controls who may sign in at all, and their role.
-
-| Column | Type | Notes |
-|---|---|---|
-| id | string | `acc_xxxxxxxx` |
-| email | string | Google account email, lower-cased |
-| role | `admin` \| `editor` \| `viewer` | |
-| status | `active` \| `revoked` | |
-| addedBy | string | email of the admin who granted it |
-| addedAt | ISO timestamp | |
-| notes | string | |
-
-## `Audit_Log`
+## `audit_log`
 
 Append-only activity trail, written automatically on every create/update/delete.
 
-| Column | Type | Notes |
-|---|---|---|
-| id | string | `log_xxxxxxxx` |
-| timestamp | ISO timestamp | |
-| actorEmail | string | |
-| action | string | e.g. `create`, `update`, `delete`, `sync`, `grant-access` |
-| entityType | string | e.g. `IPO`, `Application`, `FundAllocation`, `Investor`, `Access` |
-| entityId | string | |
-| details | string | short human-readable summary |
+| Column | Notes |
+|---|---|
+| id | `log_xxxxxxxx` |
+| timestamp | |
+| actor | access tier that made the change (`editor`, or `system-cron` for automated syncs) — **not** a person's identity, since access is a shared password rather than individual accounts |
+| action | e.g. `create`, `update`, `delete`, `sync` |
+| entity_type | e.g. `IPO`, `Application`, `FundAllocation`, `Investor` |
+| entity_id, details | |

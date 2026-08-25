@@ -43,6 +43,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const ipo = await createIpo(parsed.data);
-  await logAudit(auth.email, "create", "IPO", ipo.id, ipo.name);
+  await logAudit(auth.actor, "create", "IPO", ipo.id, ipo.name);
   return NextResponse.json({ ipo }, { status: 201 });
 }

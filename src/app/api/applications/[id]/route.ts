@@ -17,7 +17,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const patch = await req.json();
   try {
     const application = await updateApplication(params.id, patch);
-    await logAudit(auth.email, "update", "Application", application.id, application.ipoName);
+    await logAudit(auth.actor, "update", "Application", application.id, application.ipoName);
     return NextResponse.json({ application });
   } catch (err) {
     return NextResponse.json(
@@ -28,9 +28,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const auth = await requireApiAuth("admin");
+  const auth = await requireApiAuth("editor");
   if (!isAuthedContext(auth)) return auth;
   await deleteApplication(params.id);
-  await logAudit(auth.email, "delete", "Application", params.id, "");
+  await logAudit(auth.actor, "delete", "Application", params.id, "");
   return NextResponse.json({ ok: true });
 }

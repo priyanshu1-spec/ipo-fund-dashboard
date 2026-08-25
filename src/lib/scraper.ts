@@ -12,13 +12,10 @@
 //
 // This is intentionally resilient over precise. It will sometimes extract
 // nothing (safe — falls through to "no changes"), rarely extract junk (you
-// review before it's saved, see /ipos "Review Sync Results" step), and needs
-// occasional maintenance if you point it at a new source. For that reason:
+// review before it's saved), and needs occasional maintenance if you point
+// it at a new source. For that reason:
 //   1. Manual add/edit of IPOs in the UI always works, regardless of scraper health.
 //   2. Bulk CSV/JSON import (importIposFromJson below) is a reliable fallback.
-//   3. scripts/apps-script/Code.gs is a second, independent automation path
-//      you can run from Google Apps Script (which has normal outbound
-//      internet access even if this server's network is restricted).
 // ============================================================================
 
 import * as cheerio from "cheerio";

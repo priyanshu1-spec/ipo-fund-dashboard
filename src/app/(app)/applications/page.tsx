@@ -39,8 +39,8 @@ const emptyForm: Partial<ApplicationRow> = {
 export default function ApplicationsPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor" || role === "admin";
-  const canDelete = role === "admin";
+  const canEdit = role === "editor";
+  const canDelete = role === "editor";
 
   const { data, mutate, isLoading } = useSWR<{ applications: ApplicationRow[] }>("/api/applications", fetcher);
   const { data: iposData } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);

@@ -57,8 +57,8 @@ export async function POST(req: Request) {
   if (typeof body.jsonImport === "string" && body.jsonImport.trim()) {
     try {
       const scraped = importIposFromJson(body.jsonImport);
-      const result = await applyScrapedIpos(scraped, auth.email);
-      await logAudit(auth.email, "sync", "IPO", "bulk-import", JSON.stringify(result));
+      const result = await applyScrapedIpos(scraped, auth.actor);
+      await logAudit(auth.actor, "sync", "IPO", "bulk-import", JSON.stringify(result));
       return NextResponse.json({ ...result, source: "manual-import", errors: [] });
     } catch (err) {
       return NextResponse.json(
@@ -77,15 +77,15 @@ export async function POST(req: Request) {
       {
         error:
           "No sync sources configured. Set IPO_SYNC_SOURCES in your environment, or use " +
-          "'Bulk Import JSON' to paste IPO data manually. See docs/GOOGLE_SHEETS_SETUP.md.",
+          "'Bulk Import JSON' to paste IPO data manually. See docs/DEPLOYMENT.md.",
       },
       { status: 400 }
     );
   }
 
   const { ipos: scraped, errors } = await syncIposFromSources(sources);
-  const result = await applyScrapedIpos(scraped, auth.email);
-  await logAudit(auth.email, "sync", "IPO", "auto-sync", JSON.stringify({ ...result, errors }));
+  const result = await applyScrapedIpos(scraped, auth.actor);
+  await logAudit(auth.actor, "sync", "IPO", "auto-sync", JSON.stringify({ ...result, errors }));
 
   return NextResponse.json({ ...result, source: "scrape", errors });
 }

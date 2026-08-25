@@ -3,17 +3,7 @@
 // client (React components). Keep these in sync with docs/SCHEMA.md.
 // ============================================================================
 
-export type UserRole = "admin" | "editor" | "viewer";
-
-export interface AccessControlRow {
-  id: string;
-  email: string;
-  role: UserRole;
-  status: "active" | "revoked";
-  addedBy: string;
-  addedAt: string;
-  notes?: string;
-}
+export type UserRole = "editor" | "viewer";
 
 export type IpoType = "Mainboard" | "SME";
 
@@ -122,7 +112,8 @@ export interface InvestorRow {
 export interface AuditLogRow {
   id: string;
   timestamp: string;
-  actorEmail: string;
+  /** Who did it — since access is a shared password rather than individual accounts, this is a role label (e.g. "editor", "system-cron"), not a person's identity. */
+  actor: string;
   action: string;
   entityType: string;
   entityId: string;

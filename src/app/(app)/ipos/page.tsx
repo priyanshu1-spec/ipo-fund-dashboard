@@ -43,8 +43,8 @@ const emptyForm: Partial<IpoRow> = {
 export default function IposPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor" || role === "admin";
-  const canDelete = role === "admin";
+  const canEdit = role === "editor";
+  const canDelete = role === "editor";
 
   const { data, mutate, isLoading } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
   const ipos = data?.ipos ?? [];

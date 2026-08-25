@@ -32,7 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
   const role = session?.user?.role ?? "viewer";
-  const isAdmin = role === "admin";
+  const canEdit = role === "editor";
 
   const navLinks = (
     <nav className="flex flex-1 flex-col gap-1 px-2">
@@ -56,7 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         );
       })}
-      {isAdmin && (
+      {canEdit && (
         <Link
           href="/settings"
           onClick={() => setMobileOpen(false)}
@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         >
           <Settings size={17} />
-          Access & Settings
+          Settings & Audit Log
         </Link>
       )}
       <a
@@ -130,14 +130,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function UserFooter() {
   const { data: session } = useSession();
+  const role = session?.user?.role ?? "viewer";
   return (
     <div className="mt-auto border-t border-slate-200 px-4 pt-3 dark:border-slate-800">
       <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-        {session?.user?.name ?? session?.user?.email}
+        {role === "editor" ? "Full access" : "View only"}
       </p>
-      <p className="mb-2 text-xs capitalize text-slate-500 dark:text-slate-400">
-        {session?.user?.role ?? "viewer"}
-      </p>
+      <p className="mb-2 text-xs capitalize text-slate-500 dark:text-slate-400">Signed in via shared password</p>
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
         className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400"

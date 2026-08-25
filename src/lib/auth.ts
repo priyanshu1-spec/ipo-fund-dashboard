@@ -1,20 +1,43 @@
-import type { AuthOptions, Session } from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
-import { findAccessByEmail } from "@/lib/repositories/access";
+import type { AuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
 import type { UserRole } from "@/types";
 
-function bootstrapAdminEmails(): string[] {
-  return (process.env.BOOTSTRAP_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-}
-
+/**
+ * Access is a shared password rather than individual Google accounts — no
+ * external console setup required. Two independent, optional passwords:
+ *   APP_ACCESS_PASSWORD  -> full access (add/edit/delete everything)
+ *   APP_VIEWER_PASSWORD  -> read-only access (optional; give this one to
+ *                           someone you only want to see the dashboard)
+ * Only APP_ACCESS_PASSWORD is required. To revoke everyone at once, change
+ * it in your hosting provider's env vars and redeploy — every existing
+ * session is invalidated on next request.
+ */
 export const authOptions: AuthOptions = {
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_OAUTH_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? "",
+    CredentialsProvider({
+      name: "Password",
+      credentials: {
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const password = credentials?.password ?? "";
+        const editorPassword = process.env.APP_ACCESS_PASSWORD;
+        const viewerPassword = process.env.APP_VIEWER_PASSWORD;
+
+        if (!editorPassword) {
+          throw new Error(
+            "APP_ACCESS_PASSWORD is not configured on the server. See docs/DEPLOYMENT.md."
+          );
+        }
+
+        if (password && password === editorPassword) {
+          return { id: "editor", name: "Full access", role: "editor" as UserRole };
+        }
+        if (viewerPassword && password && password === viewerPassword) {
+          return { id: "viewer", name: "View only", role: "viewer" as UserRole };
+        }
+        return null;
+      },
     }),
   ],
   pages: {
@@ -23,54 +46,21 @@ export const authOptions: AuthOptions = {
   },
   session: { strategy: "jwt" },
   callbacks: {
-    /**
-     * Gatekeeper: only emails that are bootstrap admins OR have an "active"
-     * row in the Access_Control sheet may sign in. Everyone else is bounced
-     * to /access-denied. This is what makes the app "share with whoever I
-     * give permission to" rather than "share with anyone with a Google account".
-     */
-    async signIn({ user }) {
-      const email = user.email?.toLowerCase().trim();
-      if (!email) return false;
-      if (bootstrapAdminEmails().includes(email)) return true;
-      try {
-        const access = await findAccessByEmail(email);
-        return !!access && access.status === "active";
-      } catch (err) {
-        console.error("Access check failed during sign-in:", err);
-        return false;
-      }
-    },
-    async jwt({ token }) {
-      const email = token.email?.toLowerCase().trim();
-      if (!email) return token;
-      if (bootstrapAdminEmails().includes(email)) {
-        token.role = "admin" as UserRole;
-        return token;
-      }
-      try {
-        const access = await findAccessByEmail(email);
-        token.role = (access?.status === "active" ? access.role : "viewer") as UserRole;
-      } catch {
-        token.role = "viewer" as UserRole;
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = (user as unknown as { role: UserRole }).role;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as Session["user"] & { role: UserRole }).role =
-          (token.role as UserRole) ?? "viewer";
+        session.user.role = token.role as UserRole;
       }
       return session;
     },
   },
 };
 
-export function isAdmin(session: Session | null): boolean {
-  return (session?.user as { role?: UserRole } | undefined)?.role === "admin";
-}
-
-export function canEdit(session: Session | null): boolean {
-  const role = (session?.user as { role?: UserRole } | undefined)?.role;
-  return role === "admin" || role === "editor";
+export function canEdit(role: UserRole | undefined): boolean {
+  return role === "editor";
 }

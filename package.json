@@ -2,7 +2,7 @@
   "name": "ipo-fund-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "Personal IPO Tracking & Multi-Account Fund Allocation Dashboard, backed by Google Sheets.",
+  "description": "Personal IPO Tracking & Multi-Account Fund Allocation Dashboard, backed by Vercel Postgres.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,12 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@react-oauth/google": "^0.12.1",
+    "@neondatabase/serverless": "^0.10.4",
     "cheerio": "^1.0.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
-    "google-auth-library": "^9.14.1",
-    "googleapis": "^140.0.1",
     "lucide-react": "^0.436.0",
     "next": "14.2.35",
     "next-auth": "^4.24.7",
