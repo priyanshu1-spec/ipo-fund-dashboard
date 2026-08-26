@@ -15,13 +15,57 @@ import {
   createIpo,
   generateIpoId,
   getIpo,
+  listIpoIdsAndNames,
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
+import { chittorgarhProvider } from "@/lib/ipoProviders/chittorgarhProvider";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
 
-const PROVIDERS: IpoDataProvider[] = [nseProvider];
+// Order matters only in that NSE (official) typically discovers a company
+// first; a later provider's row for the "same" IPO is matched onto it by
+// fuzzy name (see resolveIpoId) regardless of which ran first.
+const PROVIDERS: IpoDataProvider[] = [nseProvider, chittorgarhProvider];
+
+/** Strip legal-entity noise so "XYZ Ltd" / "XYZ Limited" / "XYZ India Pvt Ltd" compare equal across sources that phrase the same company differently. */
+function normalizeCompanyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\b(limited|ltd|india|pvt|private|inc)\b\.?/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
+/**
+ * Resolves which DB row a provider's item belongs to. Tries the exact
+ * slug-derived id first (fast path — matches when a provider re-reports the
+ * same spelling, which is the common case). If that misses, looks for
+ * exactly one existing row of the same type whose normalized name matches or
+ * contains/[is contained by] the incoming name — this is what lets a
+ * secondary source (different exact company-name spelling) supplement an
+ * existing row instead of creating a duplicate. Ambiguous (0 or 2+ matches)
+ * falls back to the exact-slug id, i.e. its own new row.
+ */
+async function resolveIpoId(item: NormalizedIpo): Promise<string> {
+  const exactId = generateIpoId(item.name, item.type);
+  if (await getIpo(exactId)) return exactId;
+
+  const normalizedIncoming = normalizeCompanyName(item.name);
+  if (!normalizedIncoming) return exactId;
+
+  const candidates = await listIpoIdsAndNames(item.type);
+  const matches = candidates.filter((c) => {
+    const normalizedExisting = normalizeCompanyName(c.name);
+    if (!normalizedExisting) return false;
+    return (
+      normalizedExisting === normalizedIncoming ||
+      normalizedExisting.includes(normalizedIncoming) ||
+      normalizedIncoming.includes(normalizedExisting)
+    );
+  });
+  return matches.length === 1 ? matches[0].id : exactId;
+}
 
 export interface ProviderRunSummary {
   provider: string;
@@ -47,10 +91,13 @@ function isValid(item: NormalizedIpo): boolean {
   return true;
 }
 
-function combineDataSource(existing: IpoDataSource | undefined, providerIsOfficial: boolean): IpoDataSource {
-  const incoming: IpoDataSource = providerIsOfficial ? "NSE" : "Manual";
-  if (!existing || existing === incoming) return incoming;
-  return "NSE + Manual";
+const SOURCE_PRIORITY = ["NSE", "Chittorgarh", "Manual"] as const;
+
+/** Adds providerLabel to whatever sources already contributed to this row (order-independent, de-duplicated), rendered in a stable NSE / Chittorgarh / Manual order. */
+function combineDataSource(existing: IpoDataSource | undefined, providerLabel: string): IpoDataSource {
+  const tokens = new Set(existing ? existing.split(" + ") : []);
+  tokens.add(providerLabel);
+  return SOURCE_PRIORITY.filter((s) => tokens.has(s)).join(" + ") as IpoDataSource;
 }
 
 /** Merges one provider's normalized row into an existing DB row (if any) — never overwrites a field the provider didn't supply, never overwrites a manually-corrected value with a blank. */
@@ -60,12 +107,15 @@ async function applyNormalizedIpo(
 ): Promise<"inserted" | "updated" | "skipped"> {
   if (!isValid(item)) return "skipped";
 
-  const id = generateIpoId(item.name, item.type);
+  const id = await resolveIpoId(item);
   const existing = await getIpo(id);
   const now = new Date().toISOString();
 
   const patch: Partial<IpoRow> = {
-    name: item.name,
+    // A secondary (non-official) provider matched onto an existing row by
+    // fuzzy name never overwrites the name that's already there — its own
+    // spelling may differ, and the existing one (usually NSE's) wins.
+    name: existing && !provider.isOfficial ? existing.name : item.name,
     type: item.type,
     ...(item.symbol && { symbol: item.symbol }),
     ...(item.issueType && { issueType: item.issueType }),
@@ -92,7 +142,7 @@ async function applyNormalizedIpo(
     ...(item.listingPrice != null && { listingPrice: item.listingPrice }),
     ...(item.exchange && { exchange: item.exchange }),
     isOfficial: provider.isOfficial || existing?.isOfficial || false,
-    dataSource: combineDataSource(existing?.dataSource, provider.isOfficial),
+    dataSource: combineDataSource(existing?.dataSource, provider.displayName),
     sourceUrl: item.sourceUrl,
     lastSyncedAt: now,
   };

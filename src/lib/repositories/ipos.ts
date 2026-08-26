@@ -77,6 +77,13 @@ export async function getIpo(id: string): Promise<IpoRow | undefined> {
   return rows[0] ? toIpo(rows[0]) : undefined;
 }
 
+/** Lightweight id+name listing for a type — used to fuzzy-match a secondary provider's spelling of a company name against the row an earlier provider already created, without pulling every column. */
+export async function listIpoIdsAndNames(type: IpoType): Promise<{ id: string; name: string }[]> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT id, name FROM ipos WHERE type = ${type}`;
+  return rows.map((r) => ({ id: String(r.id), name: String(r.name) }));
+}
+
 const IPO_COLUMNS = [
   "id", "name", "symbol", "type", "issue_type", "open_date", "close_date", "allotment_date",
   "refund_date", "listing_date", "price_band_min", "price_band_max", "face_value", "lot_size",

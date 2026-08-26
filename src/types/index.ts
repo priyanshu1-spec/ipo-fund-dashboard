@@ -17,7 +17,14 @@ export type IpoStatus =
   | "Listed";
 
 /** Who last supplied the core facts for this IPO row — NOT the same as whether GMP is official (GMP is never official, from anyone). */
-export type IpoDataSource = "NSE" | "Manual" | "NSE + Manual";
+export type IpoDataSource =
+  | "NSE"
+  | "Chittorgarh"
+  | "Manual"
+  | "NSE + Chittorgarh"
+  | "NSE + Manual"
+  | "Chittorgarh + Manual"
+  | "NSE + Chittorgarh + Manual";
 
 export interface IpoRow {
   id: string; // stable identifier — see generateIpoId() in repositories/ipos.ts; never re-derive from name alone

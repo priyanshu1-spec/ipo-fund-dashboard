@@ -48,6 +48,13 @@ is inherently unofficial from every source that publishes it, always. See
 `docs/DEPLOYMENT.md` §5 for the Cron frequency limitation on Vercel's free
 tier.
 
+A second provider, `src/lib/ipoProviders/chittorgarhProvider.ts`
+(`isOfficial: false`), supplements whatever NSE doesn't publish yet — lot
+size, allotment/listing dates — from chittorgarh.com's public report pages.
+It's fuzzy-matched onto the same row NSE already created (never lets its own
+spelling of a company name overwrite NSE's), and every row's `SOURCE` badge
+tells you exactly which provider(s) contributed to it.
+
 ## Quick start
 
 ```bash
