@@ -274,7 +274,7 @@ export default function IposPage() {
                 <td className="td">
                   ₹{ipo.priceBandMin}–{ipo.priceBandMax}
                 </td>
-                <td className="td">{ipo.lotSize}</td>
+                <td className="td">{ipo.lotSize ?? "—"}</td>
                 <td className="td">
                   <StatusBadge status={ipo.status} colorMap={IPO_STATUS_COLORS} />
                 </td>

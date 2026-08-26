@@ -5,10 +5,23 @@
 // reachable without a login, CAPTCHA, or bypassing any access control — a
 // normal cookie handshake, same as any browser visiting the page does).
 //
+// NSE exposes Mainboard and SME issues as two SEPARATE category feeds off
+// the same endpoint (?category=ipo vs ?category=sme) — they are not merged
+// server-side, so both must be fetched independently or SME rows never
+// appear at all.
+//
 // Explicitly does NOT and will never provide GMP — no exchange publishes
 // grey market data, by definition (GMP is unofficial, off-exchange
 // activity). Subscription figures ARE published here once an IPO is open,
 // and are treated as official.
+//
+// Field-name note: NSE's response shape isn't documented and has drifted
+// before, and several fields (lot size, allotment/listing dates) are often
+// simply not published yet for an issue still in "Upcoming" status — that's
+// a real gap in NSE's own data, not a bug here. `pick()` tries several
+// known/plausible field-name variants per value and only fills a field when
+// one actually matches; anything it can't find is left undefined rather
+// than guessed at, so a missing field never becomes a fabricated 0 or date.
 //
 // If NSE changes this endpoint's shape or blocks it outright, this provider
 // simply returns zero rows + a warning — it never falls back to scraping a
@@ -18,7 +31,7 @@
 // ============================================================================
 
 import type { IpoDataProvider, NormalizedIpo, ProviderFetchResult } from "./types";
-import type { IpoType } from "@/types";
+import type { IpoStatus, IpoType } from "@/types";
 
 const BROWSER_HEADERS = {
   "User-Agent":
@@ -27,7 +40,7 @@ const BROWSER_HEADERS = {
 };
 
 const NSE_PAGE_URL = "https://www.nseindia.com/market-data/all-upcoming-issues-ipo";
-const NSE_API_URL = "https://www.nseindia.com/api/all-upcoming-issues?category=ipo";
+const NSE_API_BASE = "https://www.nseindia.com/api/all-upcoming-issues";
 
 function pick(row: Record<string, unknown>, keys: string[]): string {
   for (const k of keys) {
@@ -55,6 +68,76 @@ function parsePriceBand(text: string): { min?: number; max?: number } {
   return { min: Math.min(...nums), max: Math.max(...nums) };
 }
 
+const STATUS_MAP: Record<string, IpoStatus> = {
+  upcoming: "Upcoming",
+  forthcoming: "Upcoming",
+  active: "Open",
+  open: "Open",
+  current: "Open",
+  closed: "Closed",
+  close: "Closed",
+  "allotment awaited": "Allotment Awaited",
+  allotted: "Allotted",
+  listed: "Listed",
+};
+
+function parseStatus(text: string): IpoStatus | undefined {
+  return STATUS_MAP[text.trim().toLowerCase()];
+}
+
+async function fetchCategory(
+  category: "ipo" | "sme",
+  cookieHeader: string
+): Promise<{ rows: Record<string, unknown>[]; warning?: string }> {
+  const apiRes = await fetch(`${NSE_API_BASE}?category=${category}`, {
+    headers: {
+      ...BROWSER_HEADERS,
+      Accept: "application/json, text/plain, */*",
+      Referer: NSE_PAGE_URL,
+      Cookie: cookieHeader,
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!apiRes.ok) {
+    return { rows: [], warning: `HTTP ${apiRes.status} fetching NSE ${category.toUpperCase()} IPO data` };
+  }
+  const data = await apiRes.json();
+  const rows: Record<string, unknown>[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+  return { rows };
+}
+
+function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedIpo | undefined {
+  const name = pick(row, ["companyName", "symbol", "name", "issuerName"]);
+  if (!name) return undefined;
+
+  const priceBand = parsePriceBand(pick(row, ["issuePrice", "priceRange", "issuePriceRange"]));
+  const status = parseStatus(pick(row, ["status", "issueStatus"]));
+
+  return {
+    name,
+    symbol: pick(row, ["symbol"]) || undefined,
+    type,
+    issueType: pick(row, ["issueType", "typeOfIssue"]) || undefined,
+    openDate: parseDate(pick(row, ["issueStartDate", "startDate", "biddingStartDate"])),
+    closeDate: parseDate(pick(row, ["issueEndDate", "endDate", "biddingEndDate"])),
+    allotmentDate: parseDate(
+      pick(row, ["allotmentDate", "basisOfAllotmentDate", "tentativeAllotmentDate", "allotmentFinalisationDate"])
+    ),
+    listingDate: parseDate(pick(row, ["listingDate", "tentativeListingDate", "listingOn", "listedDate"])),
+    priceBandMin: priceBand.min,
+    priceBandMax: priceBand.max,
+    faceValue: parseNum(pick(row, ["faceValue", "face_value"])),
+    lotSize: parseNum(pick(row, ["marketLot", "lotSize", "minLot", "minOrderQuantity", "minBidQuantity"])),
+    issueSize: pick(row, ["issueSize"]) || undefined,
+    status,
+    registrar: pick(row, ["registrar", "rta", "registrarToIssue"]) || undefined,
+    leadManagers: pick(row, ["leadManager", "leadManagers", "bookRunningLeadManager", "brlm"]) || undefined,
+    exchange: type === "SME" ? "NSE SME" : "NSE",
+    sourceUrl: NSE_PAGE_URL,
+    // Deliberately no gmp field here — NSE never has grey market data.
+  };
+}
+
 export const nseProvider: IpoDataProvider = {
   key: "nse",
   displayName: "NSE",
@@ -80,47 +163,23 @@ export const nseProvider: IpoDataProvider = {
       .filter(Boolean)
       .join("; ");
 
-    const apiRes = await fetch(NSE_API_URL, {
-      headers: {
-        ...BROWSER_HEADERS,
-        Accept: "application/json, text/plain, */*",
-        Referer: NSE_PAGE_URL,
-        Cookie: cookieHeader,
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!apiRes.ok) {
-      throw new Error(`HTTP ${apiRes.status} fetching NSE IPO data`);
-    }
-
-    const data = await apiRes.json();
-    const list: Record<string, unknown>[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+    const [mainboard, sme] = await Promise.all([
+      fetchCategory("ipo", cookieHeader),
+      fetchCategory("sme", cookieHeader),
+    ]);
+    if (mainboard.warning) warnings.push(mainboard.warning);
+    if (sme.warning) warnings.push(sme.warning);
 
     const ipos: NormalizedIpo[] = [];
-    for (const row of list) {
-      const name = pick(row, ["companyName", "symbol", "name", "issuerName"]);
-      if (!name) {
-        warnings.push("Skipped one NSE row with no recognizable company name field");
-        continue;
-      }
-      const priceBand = parsePriceBand(pick(row, ["issuePrice", "priceRange", "issuePriceRange"]));
-      const seriesRaw = pick(row, ["series", "board"]).toUpperCase();
-      const type: IpoType = seriesRaw.includes("SME") ? "SME" : "Mainboard";
-
-      ipos.push({
-        name,
-        symbol: pick(row, ["symbol"]) || undefined,
-        type,
-        openDate: parseDate(pick(row, ["issueStartDate", "startDate", "biddingStartDate"])),
-        closeDate: parseDate(pick(row, ["issueEndDate", "endDate", "biddingEndDate"])),
-        priceBandMin: priceBand.min,
-        priceBandMax: priceBand.max,
-        lotSize: parseNum(pick(row, ["marketLot", "lotSize", "minLot"])),
-        issueSize: pick(row, ["issueSize"]) || undefined,
-        exchange: type === "SME" ? "NSE SME" : "NSE",
-        sourceUrl: NSE_PAGE_URL,
-        // Deliberately no gmp field here — NSE never has grey market data.
-      });
+    for (const row of mainboard.rows) {
+      const normalized = normalizeRow(row, "Mainboard");
+      if (normalized) ipos.push(normalized);
+      else warnings.push("Skipped one NSE Mainboard row with no recognizable company name field");
+    }
+    for (const row of sme.rows) {
+      const normalized = normalizeRow(row, "SME");
+      if (normalized) ipos.push(normalized);
+      else warnings.push("Skipped one NSE SME row with no recognizable company name field");
     }
 
     if (ipos.length === 0) {

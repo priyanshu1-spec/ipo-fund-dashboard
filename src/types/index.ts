@@ -33,7 +33,7 @@ export interface IpoRow {
   priceBandMin: number;
   priceBandMax: number;
   faceValue: number | null;
-  lotSize: number;
+  lotSize: number | null;
   minInvestment: number | null;
   issueSize: string;
   freshIssueSize: string;
