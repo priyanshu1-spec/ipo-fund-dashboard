@@ -63,9 +63,6 @@ function LoginCard() {
         </button>
       </form>
 
-      <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">
-        Your data is stored only in this browser. Different devices/browsers will not share data.
-      </p>
     </div>
   );
 }

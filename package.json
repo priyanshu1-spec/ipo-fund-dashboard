@@ -2,7 +2,7 @@
   "name": "ipo-fund-dashboard",
   "version": "1.0.0",
   "private": true,
-  "description": "Personal IPO Tracking & Multi-Account Fund Allocation Dashboard — no backend database, data lives in the browser (localStorage).",
+  "description": "Personal IPO Tracking & Multi-Account Fund Allocation Dashboard — server-side Postgres, automatic IPO data fetching, admin-managed access.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,13 +16,17 @@
     "lucide-react": "^0.436.0",
     "next": "14.2.35",
     "next-auth": "^4.24.7",
+    "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.12.7",
-    "xlsx": "^0.18.5"
+    "swr": "^2.2.5",
+    "xlsx": "^0.18.5",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.14.15",
+    "@types/pg": "^8.11.10",
     "@types/react": "^18.3.4",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.20",

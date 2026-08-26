@@ -1,74 +1,81 @@
-# Data Schema (browser localStorage)
+# Database Schema (Postgres)
 
-There is no database. Each list below is one `localStorage` key in the
-browser (see [`src/lib/localStorage.ts`](../src/lib/localStorage.ts)),
-holding a JSON array of objects shaped exactly like the corresponding
-TypeScript type in [`src/types/index.ts`](../src/types/index.ts) — that file
-is the single source of truth; keep this doc in sync with it.
-
-Key prefix: `ipo-fund-dashboard:` (e.g. the IPOs list is stored under
-`ipo-fund-dashboard:ipos`). You can inspect/edit it yourself in any browser's
-DevTools → Application/Storage → Local Storage.
+Tables are created automatically on first use (see
+[`src/lib/db.ts`](../src/lib/db.ts)) — no manual migration step. This doc
+mirrors [`src/types/index.ts`](../src/types/index.ts), the source of truth
+for what each field means; keep both in sync.
 
 ---
 
-## `ipo-fund-dashboard:ipos` → `IpoRow[]` — Module A
+## `ipos` — Module A / automated + manual IPO data
 
-| Field | Notes |
+| Column | Notes |
 |---|---|
-| id | `ipo_xxxxxxxx` |
-| name | |
+| id | **Stable identifier**: `ipo_{slugified-name}_{type}` — see `generateIpoId()` in `repositories/ipos.ts`. Deliberately not just the raw name, and generated the same way regardless of which provider supplies the row, so repeated fetches update the same row instead of creating duplicates. |
+| name, symbol | |
 | type | `Mainboard` \| `SME` |
-| openDate, closeDate, allotmentDate, refundDate, listingDate | ISO `yyyy-MM-dd` |
-| priceBandMin, priceBandMax | ₹ |
-| lotSize | shares |
-| issueSize | free text, e.g. "₹450 Cr" |
+| issue_type | e.g. "Book Built" — free text, often unavailable pre-filing |
+| open_date, close_date, allotment_date, refund_date, listing_date | ISO `yyyy-MM-dd` |
+| price_band_min, price_band_max, face_value, lot_size, min_investment | ₹ |
+| issue_size, fresh_issue_size, offer_for_sale_size | free text, e.g. "₹450 Cr" |
 | status | `Upcoming` \| `Open` \| `Closed` \| `Allotment Awaited` \| `Allotted` \| `Listed` |
-| gmp | ₹ per share — manual or best-effort synced Grey Market Premium |
-| gmpUpdatedAt | ISO timestamp |
-| listingPrice | number \| `null` — filled once actually listed |
-| exchange | e.g. "NSE / BSE" |
-| sourceUrl, lastSyncedAt, notes | |
+| registrar, lead_managers | |
+| qib/nii/retail/employee/shareholder/overall_subscription | times subscribed, nullable — official once NSE publishes it |
+| gmp | ₹ per share. **Always unofficial/market-indicative** — no exchange or registrar publishes this, from anyone, ever |
+| gmp_updated_at | |
+| listing_price, listing_gain_percent | filled once actually listed |
+| exchange | e.g. "NSE", "NSE SME" |
+| is_official | true only when the *core facts* (not GMP) most recently came from an exchange source |
+| data_source | `NSE` \| `Manual` \| `NSE + Manual` |
+| source_url, last_synced_at, notes | |
 
-## `ipo-fund-dashboard:applications` → `ApplicationRow[]` — Module B
+## `ipo_gmp_history` — Section 6, historical GMP
 
-| Field | Notes |
+Append-only: a new row every time GMP actually changes, never overwritten.
+
+| Column | Notes |
 |---|---|
-| id | `app_xxxxxxxx` |
-| ipoId, ipoName | references an `IpoRow` |
-| appliedInNameOf | Demat account holder label |
-| investorId | references an `InvestorRow` |
-| panMasked, applicationNumber, upiId | |
-| category | `Retail` \| `HNI (sHNI)` \| `bHNI` \| `Shareholder` \| `Employee` |
-| lotsApplied, amountBlocked | |
-| paymentMode | `ASBA` \| `UPI` |
-| allotmentStatus | `Pending` \| `Allotted` \| `Not Allotted` \| `Partial` |
-| lotsAllotted, amountAllotted | |
-| refundAmount, refundStatus, refundDate | |
-| sellDate, sellPrice | once shares are sold post-listing |
-| createdBy, createdAt, updatedAt, notes | |
+| id | `gmph_xxxxxxxx` |
+| ipo_id | FK → `ipos.id`, cascade delete |
+| gmp | ₹ per share |
+| recorded_at | ISO timestamp |
+| source | which provider supplied this reading |
 
-## `ipo-fund-dashboard:funds` → `FundAllocationRow[]` — Module C
+## `ipo_subscription_history` — Section 6, historical subscription
 
-| Field | Notes |
+Append-only snapshot per sync run while an IPO is open.
+
+| Column | Notes |
 |---|---|
-| id | `fund_xxxxxxxx` |
-| applicationId | references an `ApplicationRow` |
-| ipoName | denormalized |
-| investorId, investorName | who the capital came from |
-| source | `Self` \| `Third-Party` |
-| amountContributed, dateReceived | |
-| repaymentBankAccount, amountRepaid, repaymentDate | |
-| profitShareAmount, profitShareStatus | `N/A` \| `Pending` \| `Settled` |
-| createdAt, notes | |
+| id | `subh_xxxxxxxx` |
+| ipo_id | FK → `ipos.id`, cascade delete |
+| qib, nii, retail, employee, shareholder, overall | nullable |
+| recorded_at, source | |
 
-## `ipo-fund-dashboard:investors` → `InvestorRow[]` — Investor Master
+## `ipo_fetch_logs` — Section 16, fetch history
 
-| Field | Notes |
+| Column | Notes |
 |---|---|
-| id | `inv_xxxxxxxx` |
-| name, relationship | e.g. Self / Spouse / Parent / Client / Friend |
-| phone, email | |
-| defaultBankAccount, defaultBankIfsc, demandAccountNumber, panMasked | |
-| status | `Active` \| `Inactive` |
-| createdAt, notes | |
+| id | `fl_xxxxxxxx` |
+| provider | e.g. "NSE" |
+| started_at, completed_at | |
+| success | |
+| records_found, records_inserted, records_updated | |
+| error_message | |
+
+## `ipo_sources` — Section 16, live provider health
+
+One row per provider, upserted after every run.
+
+| Column | Notes |
+|---|---|
+| provider | primary key, e.g. `nse` |
+| status | `healthy` \| `failing` \| `unknown` |
+| last_success_at, last_error, last_run_at | |
+
+## `investors`, `applications`, `fund_allocations` — Modules B/C/D, your personal data
+
+Same shape as before (see field-by-field list in `src/types/index.ts`), now
+persisted server-side instead of the browser. Each carries an `owner_id`
+column (defaulted to `'admin'` for this milestone) so Milestone 2 can scope
+data per real user account without another migration.

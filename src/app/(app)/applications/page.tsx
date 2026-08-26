@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
-import { useLocalEntities, STORAGE_KEYS } from "@/lib/localStorage";
+import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -41,12 +42,12 @@ export default function ApplicationsPage() {
   const canEdit = role === "editor";
   const canDelete = role === "editor";
 
-  const { items: applications, isLoading, create, update, remove } = useLocalEntities<ApplicationRow>(
-    STORAGE_KEYS.applications,
-    "app"
-  );
-  const { items: ipos } = useLocalEntities<IpoRow>(STORAGE_KEYS.ipos, "ipo");
-  const { items: investors } = useLocalEntities<InvestorRow>(STORAGE_KEYS.investors, "inv");
+  const { data, mutate, isLoading } = useSWR<{ applications: ApplicationRow[] }>("/api/applications", fetcher);
+  const { data: iposData } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
+  const { data: investorsData } = useSWR<{ investors: InvestorRow[] }>("/api/investors", fetcher);
+  const applications = data?.applications ?? [];
+  const ipos = iposData?.ipos ?? [];
+  const investors = investorsData?.investors ?? [];
 
   const [search, setSearch] = useState("");
   const [investorFilter, setInvestorFilter] = useState("All");
@@ -84,27 +85,24 @@ export default function ApplicationsPage() {
     setFormOpen(true);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
       const ipo = ipos.find((i) => i.id === form.ipoId);
       const investor = investors.find((inv) => inv.id === form.investorId);
-      const now = new Date().toISOString();
       const payload = {
         ...form,
         ipoName: ipo?.name ?? form.ipoName ?? "",
         appliedInNameOf: form.appliedInNameOf || investor?.name || "",
-        createdBy: form.createdBy || "editor",
-        createdAt: form.createdAt || now,
-        updatedAt: now,
       };
       if (editing) {
-        update(editing.id, payload);
+        await apiRequest(`/api/applications/${editing.id}`, "PUT", payload);
       } else {
-        create(payload as Omit<ApplicationRow, "id">);
+        await apiRequest("/api/applications", "POST", payload);
       }
+      await mutate();
       setFormOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -113,9 +111,10 @@ export default function ApplicationsPage() {
     }
   }
 
-  function handleDelete(app: ApplicationRow) {
+  async function handleDelete(app: ApplicationRow) {
     if (!confirm(`Delete application for "${app.ipoName}"?`)) return;
-    remove(app.id);
+    await apiRequest(`/api/applications/${app.id}`, "DELETE");
+    await mutate();
   }
 
   return (

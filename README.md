@@ -1,96 +1,113 @@
 # IPO Fund Dashboard
 
 A private IPO tracking and multi-account fund allocation dashboard. Next.js
-14 (App Router) + TypeScript + Tailwind CSS. **No backend database** — all
-data lives in the browser's `localStorage`, and access is a simple shared
-password. Deploys free on Vercel with nothing else to sign up for.
+14 (App Router) + TypeScript + Tailwind CSS, server-side Postgres, and
+automated IPO data fetching. Deploys free on Vercel.
+
+**Status**: Milestone 1 of a larger build — server-side database, automated
+IPO fetching, scheduler, and admin refresh are done. Real per-person
+accounts/approval, an admin panel, and activity/submission tracking are
+planned for later milestones (see `docs/DEPLOYMENT.md` and inline comments
+in `src/lib/auth.ts` for exactly what's in place today vs. planned).
 
 ## What it does
 
 - **IPO Market Watch** — Mainboard & SME IPOs: dates, price band, lot size,
-  status, GMP (manual or best-effort client-side synced), with search and
-  filters.
+  registrar, subscription figures, status, and GMP — automatically fetched
+  server-side (NSE) on a daily schedule plus on-demand via an admin
+  "Refresh IPO Data" button, with manual add/edit always available. Every
+  row is labeled by data source (NSE vs Manual vs both), and GMP is always
+  clearly marked unofficial/market-indicative since no legitimate source for
+  it exists anywhere.
+- **GMP history** — every change is recorded, viewable per-IPO, not just
+  overwritten.
 - **Application Ledger** — every bid: which Demat/bank account it was applied
-  under, PAN, category (Retail/HNI/bHNI/Shareholder/Employee), lots, amount
-  blocked, allotment status, refund tracking.
-- **Fund Allocation** — for every application, who actually funded it (you vs.
-  a named third-party investor), with repayment and profit-share tracking.
+  under, PAN, category, lots, amount blocked, allotment status, refund
+  tracking.
+- **Fund Allocation** — who actually funded each application (you vs. a
+  named third-party investor), with repayment and profit-share tracking.
 - **Investor Master** — everyone whose money or Demat account is involved,
-  with a live ledger (provided / blocked / refunded / allotment value /
-  outstanding / profit share) computed on the fly.
-- **Dashboard** — active bids, blocked capital (self vs. third-party split),
-  pending allotments, GMP-based estimated profit, monthly realised P&L chart,
-  duplicate-PAN warnings, upcoming/closing-soon IPOs.
-- **Excel export** — your actual backup, since there's no server-side copy.
+  with a live ledger computed on the fly.
+- **Dashboard** — active bids, blocked capital split, pending allotments,
+  GMP-based estimated profit, monthly realised P&L, duplicate-PAN warnings.
+- **Data source health & fetch logs** (Settings page) — see whether NSE
+  fetching is currently working, and the history of every sync attempt.
+- **Excel export** — full server-side backup on demand.
 
-## Important: no database means no shared/multi-device data
+## Automated IPO data fetching — how and what's realistic
 
-This is a deliberate trade-off, not an oversight. Because there's no backend
-storage, **every browser/device has its own independent copy of the data.**
-If you open the dashboard on your phone and your laptop, you'll see two
-different, unconnected datasets. If you share the link and password with
-someone else, they get their own empty dashboard, not a shared view of
-yours. If that's not what you want, a database-backed version (with real
-shared, multi-device data) is a different architecture — ask if you'd
-rather have that instead.
+`Scheduler → Provider(s) → Validation → Normalization → Database → API → UI`
+(see `src/lib/ipoSync.ts`). One provider failing never stops the dashboard —
+previously-fetched and manually-entered data stays available regardless.
+
+Being direct about what's actually achievable here: there is no official,
+sanctioned public API for Indian IPO data. NSE's public (but undocumented)
+endpoint is the most legitimate automatable source for official facts; GMP
+is inherently unofficial from every source that publishes it, always. See
+`src/lib/ipoProviders/nseProvider.ts` for the full reasoning, and
+`docs/DEPLOYMENT.md` §5 for the Cron frequency limitation on Vercel's free
+tier.
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in a password — see docs/DEPLOYMENT.md
+cp .env.example .env.local   # fill in a database URL + password — see docs/DEPLOYMENT.md
 npm run dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000), enter the password you
-set as `APP_ACCESS_PASSWORD`.
 
 ## Documentation
 
 | Doc | What's in it |
 |---|---|
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deploying to Vercel (no database step at all), passwords, custom domain, backups |
-| [`docs/SCHEMA.md`](docs/SCHEMA.md) | Exact localStorage key/shape for every entity |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Deploying to Vercel, database setup, cron, backups |
+| [`docs/SCHEMA.md`](docs/SCHEMA.md) | Exact table structure |
 
 ## Project structure
 
 ```
 src/
   app/
-    (app)/            # authenticated pages, wrapped in the sidebar shell
+    (app)/            # authenticated pages, sidebar shell
       page.tsx         # Dashboard
-      ipos/            # Module A — IPO Market Watch
+      ipos/            # Module A — IPO Market Watch + Refresh IPO Data
       applications/    # Module B — Application Ledger
       funds/           # Module C — Fund Allocation
       investors/       # Investor Master + live ledger
-      settings/        # How storage/access works
+      settings/        # Data source health, fetch logs, access info
     login/
-    api/auth/          # the only backend route — NextAuth sign-in
+    api/
+      ipos/, ipos/upcoming|open|closed, ipos/[id]/history|subscription-history
+      applications/, funds/, investors/, dashboard/summary, export
+      admin/ipo/refresh|fetch-status|fetch-logs
+      cron/sync-ipos    # scheduled entry point (CRON_SECRET-protected)
+      auth/              # NextAuth sign-in
   components/          # Reusable UI (AppShell, Modal, MetricCard, ...)
   lib/
-    localStorage.ts       # the entire data layer — typed localStorage CRUD
-    fallbackIpos.ts         # sample rows shown before you've added real ones
-    clientIpoSync.ts          # best-effort client-side IPO fetch (CORS proxy)
-    xlsxExport.ts               # client-side Excel export/backup
-    calculations.ts               # dashboard/ledger/profit math (pure, reusable)
-    duplicatePan.ts                 # SEBI duplicate-PAN warning check
-    auth.ts                          # NextAuth password-only Credentials provider
+    db.ts                 # Postgres client + schema
+    repositories/            # typed CRUD + history per entity
+    ipoProviders/              # pluggable data source interface + NSE provider
+    ipoSync.ts                   # orchestrator: fetch -> validate -> normalize -> store -> log
+    auth.ts, apiAuth.ts             # NextAuth + server-side API route guard
+    calculations.ts                   # dashboard/ledger/profit math
   types/                # shared TypeScript types — the schema, in effect
 ```
 
 ## Tech decisions & why
 
-- **No backend, no database** — the simplest possible thing to deploy: push
-  code, set two or three passwords, done. The trade-off, stated plainly
-  above, is no shared/multi-device data. That trade was made explicitly at
-  your request.
-- **Shared password, not per-person accounts** — with no database, there's
-  nowhere to store individual accounts either; access is one (or two)
-  passwords set as environment variables.
-- **IPO data sync is client-side and best-effort by design** — a browser
-  can't fetch arbitrary external sites directly (CORS), so "Sync Now" routes
-  through a free public proxy and parses whatever HTML comes back. This is
-  meaningfully less reliable than a server-side fetch, on top of the
-  underlying reality that no free, stable, official source of Indian IPO GMP
-  data exists at all. See `src/lib/clientIpoSync.ts`. Manual entry and JSON
-  bulk import always work regardless.
+- **Server-side Postgres, not browser storage** — required for the data to
+  survive refresh/restart/redeploy and be automatically updated by a
+  scheduler while nobody has the browser open.
+- **A pluggable provider architecture, not a hardcoded scraper** — each
+  source (`src/lib/ipoProviders/*`) implements the same interface, so a new
+  or replacement source can be added without touching the sync logic, the
+  database layer, or the UI.
+- **Never bypass access controls** — if a source requires defeating a
+  CAPTCHA, Cloudflare challenge, login, or rate limit, it's not used. NSE's
+  endpoint is used because it's reachable through a normal, restriction-free
+  request; if it ever isn't, this app is designed to just show fewer
+  auto-updated fields, not to route around whatever blocked it.
+- **GMP is architecturally second-class** — a nullable field, always tagged
+  unofficial, with its own history table, never merged into "official"
+  status fields. This isn't a UI label bolted on after the fact — the
+  distinction is enforced in `ipoSync.ts`.

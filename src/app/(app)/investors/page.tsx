@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
-import { useLocalEntities, STORAGE_KEYS } from "@/lib/localStorage";
+import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { formatCurrency } from "@/lib/utils";
-import { buildInvestorLedgers } from "@/lib/calculations";
-import type { ApplicationRow, FundAllocationRow, InvestorRow, IpoRow } from "@/types";
+import type { DashboardSummary, InvestorRow } from "@/types";
 
 const emptyForm: Partial<InvestorRow> = {
   name: "",
@@ -29,17 +29,12 @@ export default function InvestorsPage() {
   const canEdit = role === "editor";
   const canDelete = role === "editor";
 
-  const { items: investors, isLoading, create, update, remove } = useLocalEntities<InvestorRow>(
-    STORAGE_KEYS.investors,
-    "inv"
-  );
-  const { items: applications } = useLocalEntities<ApplicationRow>(STORAGE_KEYS.applications, "app");
-  const { items: funds } = useLocalEntities<FundAllocationRow>(STORAGE_KEYS.funds, "fund");
-  const { items: ipos } = useLocalEntities<IpoRow>(STORAGE_KEYS.ipos, "ipo");
-
+  const { data, mutate, isLoading } = useSWR<{ investors: InvestorRow[] }>("/api/investors", fetcher);
+  const { data: summaryData } = useSWR<{ summary: DashboardSummary }>("/api/dashboard/summary", fetcher);
+  const investors = data?.investors ?? [];
   const ledgerByInvestor = useMemo(
-    () => new Map(buildInvestorLedgers(investors, applications, funds, ipos).map((l) => [l.investorId, l])),
-    [investors, applications, funds, ipos]
+    () => new Map((summaryData?.summary.investorLedgers ?? []).map((l) => [l.investorId, l])),
+    [summaryData]
   );
 
   const [search, setSearch] = useState("");
@@ -65,17 +60,17 @@ export default function InvestorsPage() {
     setFormOpen(true);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const payload = { ...form, createdAt: form.createdAt || new Date().toISOString() };
       if (editing) {
-        update(editing.id, payload);
+        await apiRequest(`/api/investors/${editing.id}`, "PUT", form);
       } else {
-        create(payload as Omit<InvestorRow, "id">);
+        await apiRequest("/api/investors", "POST", form);
       }
+      await mutate();
       setFormOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
@@ -84,9 +79,10 @@ export default function InvestorsPage() {
     }
   }
 
-  function handleDelete(inv: InvestorRow) {
+  async function handleDelete(inv: InvestorRow) {
     if (!confirm(`Delete investor "${inv.name}"? Existing applications/funds referencing them will keep their name but lose the link.`)) return;
-    remove(inv.id);
+    await apiRequest(`/api/investors/${inv.id}`, "DELETE");
+    await mutate();
   }
 
   return (

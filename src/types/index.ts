@@ -1,7 +1,7 @@
 // ============================================================================
-// Core domain types — this app has no backend database; every list here is
-// persisted to the browser's localStorage (see src/lib/localStorage.ts) and
-// these types describe exactly what's stored. Keep in sync with docs/SCHEMA.md.
+// Core domain types. This app is server-backed by Postgres (see
+// src/lib/db.ts and src/lib/repositories/*.ts) — these types describe the
+// shape of each table's rows. Keep in sync with docs/SCHEMA.md.
 // ============================================================================
 
 export type UserRole = "editor" | "viewer";
@@ -16,10 +16,15 @@ export type IpoStatus =
   | "Allotted"
   | "Listed";
 
+/** Who last supplied the core facts for this IPO row — NOT the same as whether GMP is official (GMP is never official, from anyone). */
+export type IpoDataSource = "NSE" | "Manual" | "NSE + Manual";
+
 export interface IpoRow {
-  id: string;
+  id: string; // stable identifier — see generateIpoId() in repositories/ipos.ts; never re-derive from name alone
   name: string;
+  symbol: string;
   type: IpoType;
+  issueType: string; // e.g. "Book Built", "Fixed Price" — free text, often unavailable pre-filing
   openDate: string; // ISO yyyy-MM-dd
   closeDate: string;
   allotmentDate: string;
@@ -27,16 +32,73 @@ export interface IpoRow {
   listingDate: string;
   priceBandMin: number;
   priceBandMax: number;
+  faceValue: number | null;
   lotSize: number;
+  minInvestment: number | null;
   issueSize: string;
+  freshIssueSize: string;
+  offerForSaleSize: string;
   status: IpoStatus;
-  gmp: number; // grey market premium, per share, manual or scraped
+  registrar: string;
+  leadManagers: string; // comma-separated free text
+  qibSubscription: number | null;
+  niiSubscription: number | null;
+  retailSubscription: number | null;
+  employeeSubscription: number | null;
+  shareholderSubscription: number | null;
+  overallSubscription: number | null;
+  gmp: number | null; // grey market premium, per share — ALWAYS unofficial/market-indicative, never from an exchange or registrar
   gmpUpdatedAt: string;
   listingPrice: number | null; // filled once listed
+  listingGainPercent: number | null;
   exchange: string; // NSE / BSE / NSE SME / BSE SME
+  /** True only when the core facts (dates/price band/lot size/status) came from an official exchange source on the most recent update — GMP itself is excluded from this and always treated as unofficial. */
+  isOfficial: boolean;
+  dataSource: IpoDataSource;
   sourceUrl: string;
   lastSyncedAt: string;
   notes?: string;
+}
+
+export interface GmpHistoryEntry {
+  id: string;
+  ipoId: string;
+  gmp: number;
+  recordedAt: string;
+  source: string;
+}
+
+export interface SubscriptionHistoryEntry {
+  id: string;
+  ipoId: string;
+  qib: number | null;
+  nii: number | null;
+  retail: number | null;
+  employee: number | null;
+  shareholder: number | null;
+  overall: number | null;
+  recordedAt: string;
+  source: string;
+}
+
+export interface FetchLogEntry {
+  id: string;
+  provider: string;
+  startedAt: string;
+  completedAt: string | null;
+  success: boolean;
+  recordsFound: number;
+  recordsInserted: number;
+  recordsUpdated: number;
+  errorMessage: string;
+}
+
+export interface SourceHealth {
+  provider: string;
+  status: "healthy" | "failing" | "unknown";
+  lastSuccessAt: string;
+  lastError: string;
+  lastRunAt: string;
 }
 
 export type ApplicationCategory =

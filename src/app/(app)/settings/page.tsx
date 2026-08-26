@@ -1,9 +1,11 @@
 "use client";
 
+import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { Download, HardDrive, KeyRound, ShieldOff, TriangleAlert } from "lucide-react";
+import { Database, KeyRound, ShieldAlert, ShieldCheck, ShieldOff } from "lucide-react";
+import { fetcher } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
-import { exportAllToExcel } from "@/lib/xlsxExport";
+import type { FetchLogEntry, SourceHealth } from "@/types";
 
 export default function SettingsPage() {
   const { data: session, status } = useSession();
@@ -20,63 +22,159 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Settings" subtitle="How this dashboard stores data and controls access." />
-
-      <div className="card flex items-start gap-3">
-        <HardDrive className="mt-0.5 shrink-0 text-brand-600" size={18} />
-        <div className="text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-800 dark:text-slate-100">
-            This dashboard has no backend database
-          </p>
-          <p>
-            Every IPO, application, fund entry, and investor you add is stored only in{" "}
-            <strong>this browser</strong>, using its local storage. There is nothing to connect,
-            no server to configure.
-          </p>
+    <div className="space-y-8">
+      <section>
+        <PageHeader title="Settings" subtitle="How this dashboard stores data and controls access." />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="card flex items-start gap-3">
+            <Database className="mt-0.5 shrink-0 text-brand-600" size={18} />
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Server-side database</p>
+              <p>
+                All IPO data, applications, funds, and investors are stored in a Postgres database on
+                the server. Data survives browser refresh, PC restart, and redeployments.
+              </p>
+            </div>
+          </div>
+          <div className="card flex items-start gap-3">
+            <KeyRound className="mt-0.5 shrink-0 text-fuchsia-600" size={18} />
+            <div className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">Access</p>
+              <p>
+                Full-access and (optional) read-only passwords are set as environment variables. To
+                revoke access for everyone at once, change them and redeploy.
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="card flex items-start gap-3 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
-        <TriangleAlert className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" size={18} />
-        <div className="text-sm text-amber-800 dark:text-amber-200">
-          <p className="font-semibold">Important: data is not shared or synced</p>
-          <p>
-            If you (or anyone you give access to) opens this dashboard from a different browser or
-            device, they will see an empty dashboard, not the same data — nothing is sent to a
-            server. Clearing your browser&apos;s site data, using a private/incognito window, or
-            switching browsers will also start you over.
-          </p>
-        </div>
-      </div>
-
-      <div className="card flex items-start gap-3">
-        <Download className="mt-0.5 shrink-0 text-emerald-600" size={18} />
-        <div className="flex-1 text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-800 dark:text-slate-100">Back up regularly</p>
-          <p className="mb-2">
-            Since your data only exists in this browser, export it often — this is your only
-            backup and the only way to move data to another device.
-          </p>
-          <button className="btn-secondary" onClick={exportAllToExcel}>
-            <Download size={15} /> Export to Excel now
-          </button>
-        </div>
-      </div>
-
-      <div className="card flex items-start gap-3">
-        <KeyRound className="mt-0.5 shrink-0 text-fuchsia-600" size={18} />
-        <div className="text-sm text-slate-600 dark:text-slate-300">
-          <p className="font-semibold text-slate-800 dark:text-slate-100">Access</p>
-          <p>
-            Everyone you give the dashboard link and password to gets full access with that one
-            shared password (or a separate read-only password, if you set
-            <code className="mx-1 rounded bg-slate-100 px-1 dark:bg-slate-800">APP_VIEWER_PASSWORD</code>
-            ). To cut off access for everyone at once, change the password(s) in your hosting
-            provider&apos;s environment variables and redeploy.
-          </p>
-        </div>
-      </div>
+      <ProviderHealthSection />
+      <FetchLogSection />
     </div>
+  );
+}
+
+function ProviderHealthSection() {
+  const { data, isLoading } = useSWR<{ sources: SourceHealth[] }>("/api/admin/ipo/fetch-status", fetcher);
+  const sources = data?.sources ?? [];
+
+  return (
+    <section>
+      <PageHeader
+        title="IPO Data Source Health"
+        subtitle="Status of each automated data provider. If one fails, the rest of the dashboard keeps working on existing data."
+      />
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full">
+          <thead className="border-b border-slate-100 dark:border-slate-800">
+            <tr>
+              <th className="th">Provider</th>
+              <th className="th">Status</th>
+              <th className="th">Last Successful Fetch</th>
+              <th className="th">Last Run</th>
+              <th className="th">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={5} className="td py-6 text-center text-slate-400">
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!isLoading && sources.length === 0 && (
+              <tr>
+                <td colSpan={5} className="td py-6 text-center text-slate-400">
+                  No sync has run yet — click &quot;Refresh IPO Data&quot; on the IPO Market Watch page.
+                </td>
+              </tr>
+            )}
+            {sources.map((s) => (
+              <tr key={s.provider} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="td font-medium capitalize">{s.provider}</td>
+                <td className="td">
+                  <span
+                    className={`badge flex w-fit items-center gap-1 ${
+                      s.status === "healthy"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                        : s.status === "failing"
+                        ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {s.status === "healthy" ? <ShieldCheck size={12} /> : <ShieldAlert size={12} />}
+                    {s.status}
+                  </span>
+                </td>
+                <td className="td">{s.lastSuccessAt ? new Date(s.lastSuccessAt).toLocaleString("en-IN") : "—"}</td>
+                <td className="td">{s.lastRunAt ? new Date(s.lastRunAt).toLocaleString("en-IN") : "—"}</td>
+                <td className="td max-w-xs truncate text-xs text-red-600" title={s.lastError}>
+                  {s.lastError || "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function FetchLogSection() {
+  const { data, isLoading } = useSWR<{ logs: FetchLogEntry[] }>("/api/admin/ipo/fetch-logs", fetcher);
+  const logs = data?.logs ?? [];
+
+  return (
+    <section>
+      <PageHeader title="Fetch Logs" subtitle="Every automated or manual sync attempt, most recent first." />
+      <div className="card max-h-96 overflow-y-auto p-0">
+        <table className="w-full">
+          <thead className="sticky top-0 border-b border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <tr>
+              <th className="th">Started</th>
+              <th className="th">Provider</th>
+              <th className="th">Result</th>
+              <th className="th">Found / Added / Updated</th>
+              <th className="th">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={5} className="td py-6 text-center text-slate-400">
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!isLoading && logs.length === 0 && (
+              <tr>
+                <td colSpan={5} className="td py-6 text-center text-slate-400">
+                  No fetch attempts logged yet.
+                </td>
+              </tr>
+            )}
+            {logs.map((l) => (
+              <tr key={l.id} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="td whitespace-nowrap">{new Date(l.startedAt).toLocaleString("en-IN")}</td>
+                <td className="td">{l.provider}</td>
+                <td className="td">
+                  <span className={`badge ${l.success ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"}`}>
+                    {l.success ? "success" : "failed"}
+                  </span>
+                </td>
+                <td className="td">
+                  {l.recordsFound} / {l.recordsInserted} / {l.recordsUpdated}
+                </td>
+                <td className="td max-w-xs truncate text-xs text-red-600" title={l.errorMessage}>
+                  {l.errorMessage || "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

@@ -3,11 +3,14 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import type { UserRole } from "@/types";
 
 /**
- * There is no backend database, so access is a shared password rather than
- * individual accounts: APP_ACCESS_PASSWORD (required) grants full access,
- * APP_VIEWER_PASSWORD (optional) grants read-only access. To revoke access
- * for everyone, change the password(s) in your hosting provider's env vars
- * and redeploy.
+ * Milestone 1: access is still a shared password (APP_ACCESS_PASSWORD for
+ * full access, optional APP_VIEWER_PASSWORD for read-only) — not yet backed
+ * by individual database accounts. Real per-person registration/approval
+ * (Milestone 2) will replace this with DB-backed users and roles; the IPO
+ * data and your personal Applications/Funds/Investors records are already
+ * on the server (see src/lib/db.ts) regardless of this milestone's simpler
+ * auth. To revoke access for everyone right now, change the password(s) in
+ * your hosting provider's env vars and redeploy.
  */
 export const authOptions: AuthOptions = {
   providers: [
