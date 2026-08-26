@@ -29,7 +29,11 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
 - **Investor Master** — everyone whose money or Demat account is involved,
   with a live ledger computed on the fly.
 - **Dashboard** — active bids, blocked capital split, pending allotments,
-  GMP-based estimated profit, monthly realised P&L, duplicate-PAN warnings.
+  GMP-based estimated profit, monthly realised P&L, duplicate-PAN warnings,
+  and a **live share price search** (`src/components/LiveShareSearch.tsx`
+  / `src/lib/stockQuote.ts`) — look up any NSE-listed symbol on demand
+  (not just IPO-linked ones), same NSE cookie-handshake access pattern as
+  the IPO data. "Live" means as-of-search, not a streaming ticker.
 - **Data source health & fetch logs** (Settings page) — see whether NSE
   fetching is currently working, and the history of every sync attempt.
 - **Excel export** — full server-side backup on demand.

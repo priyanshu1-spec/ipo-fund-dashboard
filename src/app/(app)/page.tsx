@@ -26,6 +26,7 @@ import { fetcher } from "@/lib/fetcher";
 import { MetricCard } from "@/components/MetricCard";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { LiveShareSearch } from "@/components/LiveShareSearch";
 import { formatCurrency, formatDate, daysUntil, IPO_STATUS_COLORS } from "@/lib/utils";
 import type { DashboardSummary, IpoRow } from "@/types";
 
@@ -74,6 +75,10 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      <div className="mb-5">
+        <LiveShareSearch />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
