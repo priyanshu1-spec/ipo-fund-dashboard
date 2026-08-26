@@ -106,14 +106,21 @@ async function fetchCategory(
   return { rows };
 }
 
-function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedIpo | undefined {
+interface NormalizedRowResult {
+  ipo?: NormalizedIpo;
+  /** Populated only when lot size came back empty — the row's actual raw keys+values, so a fetch-log warning can show definitively whether NSE has this field under a different name or genuinely omits it for this row, instead of guessing at key names a third time. */
+  lotSizeDiagnostic?: string;
+}
+
+function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRowResult {
   const name = pick(row, ["companyName", "symbol", "name", "issuerName"]);
-  if (!name) return undefined;
+  if (!name) return {};
 
   const priceBand = parsePriceBand(pick(row, ["issuePrice", "priceRange", "issuePriceRange"]));
   const status = parseStatus(pick(row, ["status", "issueStatus"]));
+  const lotSize = parseNum(pick(row, ["marketLot", "lotSize", "minLot", "minOrderQuantity", "minBidQuantity"]));
 
-  return {
+  const ipo: NormalizedIpo = {
     name,
     symbol: pick(row, ["symbol"]) || undefined,
     type,
@@ -127,7 +134,7 @@ function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedIp
     priceBandMin: priceBand.min,
     priceBandMax: priceBand.max,
     faceValue: parseNum(pick(row, ["faceValue", "face_value"])),
-    lotSize: parseNum(pick(row, ["marketLot", "lotSize", "minLot", "minOrderQuantity", "minBidQuantity"])),
+    lotSize,
     issueSize: pick(row, ["issueSize"]) || undefined,
     status,
     registrar: pick(row, ["registrar", "rta", "registrarToIssue"]) || undefined,
@@ -135,6 +142,11 @@ function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedIp
     exchange: type === "SME" ? "NSE SME" : "NSE",
     sourceUrl: NSE_PAGE_URL,
     // Deliberately no gmp field here — NSE never has grey market data.
+  };
+
+  return {
+    ipo,
+    lotSizeDiagnostic: lotSize == null ? `${name}: ${JSON.stringify(row)}` : undefined,
   };
 }
 
@@ -171,15 +183,27 @@ export const nseProvider: IpoDataProvider = {
     if (sme.warning) warnings.push(sme.warning);
 
     const ipos: NormalizedIpo[] = [];
-    for (const row of mainboard.rows) {
-      const normalized = normalizeRow(row, "Mainboard");
-      if (normalized) ipos.push(normalized);
-      else warnings.push("Skipped one NSE Mainboard row with no recognizable company name field");
+    const lotSizeDiagnostics: string[] = [];
+    function collect(rows: Record<string, unknown>[], type: IpoType) {
+      for (const row of rows) {
+        const { ipo, lotSizeDiagnostic } = normalizeRow(row, type);
+        if (ipo) ipos.push(ipo);
+        else warnings.push(`Skipped one NSE ${type} row with no recognizable company name field`);
+        if (lotSizeDiagnostic && lotSizeDiagnostics.length < 2) lotSizeDiagnostics.push(lotSizeDiagnostic);
+      }
     }
-    for (const row of sme.rows) {
-      const normalized = normalizeRow(row, "SME");
-      if (normalized) ipos.push(normalized);
-      else warnings.push("Skipped one NSE SME row with no recognizable company name field");
+    collect(mainboard.rows, "Mainboard");
+    collect(sme.rows, "SME");
+
+    if (lotSizeDiagnostics.length > 0) {
+      // Not a failure — most rows above got through fine — but this is
+      // exactly the evidence needed to fix lot size parsing for real
+      // instead of guessing at NSE's field names again: the actual raw
+      // row NSE sent back, for up to 2 rows where lot size came back
+      // empty, so whether the field exists under a different name (fix
+      // the key list) or is genuinely absent from NSE's data for that
+      // row (not fixable here) can be told apart with certainty.
+      warnings.push(`Lot size missing — raw NSE row(s) for diagnosis: ${JSON.stringify(lotSizeDiagnostics)}`);
     }
 
     if (ipos.length === 0) {

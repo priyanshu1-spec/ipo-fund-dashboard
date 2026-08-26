@@ -167,8 +167,17 @@ function FetchLogSection() {
                 <td className="td">
                   {l.recordsFound} / {l.recordsInserted} / {l.recordsUpdated}
                 </td>
-                <td className="td max-w-xs truncate text-xs text-red-600" title={l.errorMessage}>
-                  {l.errorMessage || "—"}
+                <td className="td max-w-xs text-xs text-red-600">
+                  {l.errorMessage ? (
+                    <details>
+                      <summary className="cursor-pointer truncate">{l.errorMessage}</summary>
+                      <p className="mt-1 whitespace-pre-wrap break-all text-slate-600 dark:text-slate-300">
+                        {l.errorMessage}
+                      </p>
+                    </details>
+                  ) : (
+                    "—"
+                  )}
                 </td>
               </tr>
             ))}

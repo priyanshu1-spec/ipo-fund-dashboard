@@ -320,13 +320,14 @@ export async function runIpoSync(): Promise<SyncSummary> {
           ...result.warnings,
           ...rejections.map((r) => `Rejected "${r.name}": ${r.reason}`),
         ];
-        if (allWarnings.length > 0 && (found === 0 || rejections.length > 0)) {
-          // Zero usable rows is not a hard failure (site may just have
-          // nothing new right now) unless there's also nothing else to
-          // show for it — still surface the warning as the "error" field
-          // for visibility. A validation rejection is always surfaced,
-          // even alongside other successful rows, since it points at a
-          // real data-quality issue.
+        if (allWarnings.length > 0) {
+          // `success` (set above/below, not here) is what actually marks a
+          // run as failed — this "error" field is really "notes," always
+          // shown regardless of found/rejected counts. It used to only
+          // surface when found===0 or something was rejected, which
+          // silently dropped an otherwise-healthy run's diagnostic
+          // warnings (e.g. nseProvider's per-row "lot size missing, here's
+          // the raw row" notes) exactly when they'd be most useful to see.
           error = allWarnings.join("; ");
         }
       } catch (err) {
