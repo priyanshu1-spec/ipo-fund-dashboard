@@ -53,6 +53,29 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
 (see `src/lib/ipoSync.ts`). One provider failing never stops the dashboard —
 previously-fetched and manually-entered data stays available regardless.
 
+**The dashboard never fetches from an external source on page load** —
+`GET /api/ipos` is a plain Postgres read (`src/app/api/ipos/route.ts`), full
+stop. External fetching happens in exactly two places, both already off any
+visitor's request path: the daily Vercel Cron (`vercel.json` →
+`/api/cron/sync-ipos`) and the admin-only "Refresh IPO Data" button. That's
+the local-cache-plus-background-refresh pattern this kind of app should
+have, already in place — see `docs/DEPLOYMENT.md` §5 if you want
+higher-than-daily refresh (Vercel's Hobby plan caps Cron at once/day; an
+external scheduler like cron-job.org or GitHub Actions hitting the same
+endpoint gets around that without upgrading).
+
+**Validation, concretely**: every provider — regardless of how unstructured
+or undocumented its upstream source is — converges on one `NormalizedIpo`
+shape before anything reaches Postgres, and every single row is checked
+against `src/lib/ipoProviders/normalizedIpoSchema.ts` (a Zod schema) right
+there in `ipoSync.ts`. A row that fails (bad enum, close date before open
+date, a negative lot size) is dropped with a specific, logged reason
+(visible in the fetch-log warning) — never silently written malformed, and
+never fabricated into a plausible-looking placeholder (a missing field
+stays missing, shown as "—" in the UI, not coerced to `0` or `"TBD"` — the
+opposite of that once caused a real bug: a missing lot size defaulting to a
+false `0`).
+
 Being direct about what's actually achievable here: there is no official,
 sanctioned public API for Indian IPO data. NSE's public (but undocumented)
 endpoint is the most legitimate automatable source for official facts; GMP

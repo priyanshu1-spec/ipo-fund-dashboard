@@ -20,6 +20,7 @@ import {
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
 import { ipowatchProvider } from "@/lib/ipoProviders/ipowatchProvider";
+import { validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
 
@@ -94,13 +95,6 @@ export interface SyncSummary {
   totalUpdated: number;
 }
 
-/** Basic sanity checks — reject a row that's too broken to be worth storing, without ever inventing values to fill gaps. */
-function isValid(item: NormalizedIpo): boolean {
-  if (!item.name || item.name.trim().length < 2) return false;
-  if (item.priceBandMin != null && item.priceBandMax != null && item.priceBandMin > item.priceBandMax) return false;
-  return true;
-}
-
 const SOURCE_PRIORITY = ["NSE", "IPOWatch", "Chittorgarh", "Manual"];
 
 /** Adds providerLabel to whatever sources already contributed to this row (order-independent, de-duplicated), rendered in a stable order per SOURCE_PRIORITY — any label not listed there (a new provider added without updating this list) still appears, just after the known ones, rather than silently vanishing. */
@@ -116,9 +110,7 @@ function combineDataSource(existing: IpoDataSource | undefined, providerLabel: s
 async function applyNormalizedIpo(
   item: NormalizedIpo,
   provider: IpoDataProvider
-): Promise<"inserted" | "updated" | "skipped"> {
-  if (!isValid(item)) return "skipped";
-
+): Promise<"inserted" | "updated"> {
   const id = await resolveIpoId(item);
   const existing = await getIpo(id);
   const now = new Date().toISOString();
@@ -236,16 +228,31 @@ export async function runIpoSync(): Promise<SyncSummary> {
     try {
       const result = await provider.fetch();
       found = result.ipos.length;
-      for (const item of result.ipos) {
+
+      // Schema-validate every row before it ever reaches the database —
+      // this is the boundary that protects Postgres from any provider's
+      // bug, not just whichever source happens to be active today. A row
+      // that fails (bad enum, close date before open date, a negative lot
+      // size, etc.) is dropped with a specific reason, never silently
+      // written malformed and never fabricated into something plausible.
+      const { valid, rejections } = validateNormalizedIpos(result.ipos);
+      for (const item of valid) {
         const outcome = await applyNormalizedIpo(item, provider);
         if (outcome === "inserted") inserted++;
         if (outcome === "updated") updated++;
       }
-      if (result.warnings.length > 0 && found === 0) {
+
+      const allWarnings = [
+        ...result.warnings,
+        ...rejections.map((r) => `Rejected "${r.name}": ${r.reason}`),
+      ];
+      if (allWarnings.length > 0 && (found === 0 || rejections.length > 0)) {
         // Zero usable rows is not a hard failure (site may just have nothing
         // new right now) unless there's also nothing else to show for it —
         // still surface the warning as the "error" field for visibility.
-        error = result.warnings.join("; ");
+        // A validation rejection is always surfaced, even alongside other
+        // successful rows, since it points at a real data-quality issue.
+        error = allWarnings.join("; ");
       }
     } catch (err) {
       success = false;
