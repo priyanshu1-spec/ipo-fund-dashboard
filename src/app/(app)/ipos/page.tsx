@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { Plus, RefreshCw, Search, Pencil, Trash2, History, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Plus, RefreshCw, Search, Pencil, Trash2, History } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
@@ -176,38 +176,10 @@ export default function IposPage() {
       {refreshResult && (
         <div className="card mb-4 text-sm text-slate-600 dark:text-slate-300">
           {refreshResult.ok ? (
-            <div>
-              <p className="font-semibold text-slate-800 dark:text-slate-100">
-                Refresh completed: {refreshResult.totalInserted} added, {refreshResult.totalUpdated} updated.
-              </p>
-              {refreshResult.cleanedUp && refreshResult.cleanedUp.length > 0 && (
-                <p className="mt-1 text-emerald-600 dark:text-emerald-400">
-                  Removed {refreshResult.cleanedUp.length} invalid entr
-                  {refreshResult.cleanedUp.length === 1 ? "y" : "ies"}: {refreshResult.cleanedUp.join(", ")}
-                </p>
-              )}
-              <ul className="mt-1 space-y-0.5">
-                {refreshResult.providers.map((p) => (
-                  <li key={p.provider} className="flex items-center gap-1.5">
-                    {p.success ? (
-                      <ShieldCheck size={13} className="text-emerald-600" />
-                    ) : (
-                      <ShieldAlert size={13} className="text-red-600" />
-                    )}
-                    <span>
-                      {p.provider}: {p.recordsFound} found
-                      {!p.success && " — failed"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1 text-xs text-slate-400">
-                Full details (including per-row diagnostics) are in Settings → Fetch Logs.
-              </p>
-              {refreshResult.providers.length === 0 && (
-                <p className="mt-1 text-slate-400">No providers ran (unexpected — check server logs).</p>
-              )}
-            </div>
+            <p className="font-semibold text-slate-800 dark:text-slate-100">
+              Refresh completed: {refreshResult.totalInserted} added, {refreshResult.totalUpdated} updated.
+              {refreshResult.providers.some((p) => !p.success) && " Some sources had issues — see Settings."}
+            </p>
           ) : (
             <p>
               Refresh failed: {refreshResult.error}. Existing data is untouched — use &quot;Add IPO&quot; to enter

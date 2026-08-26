@@ -21,7 +21,6 @@ import {
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
-import { ipopremiumProvider } from "@/lib/ipoProviders/ipopremiumProvider";
 import { isPlausibleIpoName, validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
@@ -30,8 +29,8 @@ import type { IpoDataSource, IpoRow } from "@/types";
 // first; a later provider's row for the "same" IPO is matched onto it by
 // fuzzy name (see resolveIpo) regardless of which ran first.
 //
-// chittorgarhProvider.ts and ipowatchProvider.ts are NOT registered —
-// both were tried and pulled after real, confirmed failures:
+// NSE is the only registered provider. Three secondary-source attempts
+// were all tried and pulled after real, confirmed failures:
 // - chittorgarh: its report pages return zero <table> elements in the
 //   raw HTML — rendered client-side by JavaScript a plain fetch never
 //   executes. Not fixable without a headless browser.
@@ -39,16 +38,16 @@ import type { IpoDataSource, IpoRow } from "@/types";
 //   inserted a garbage row ("₹[.] Cr.", a template placeholder string
 //   mistaken for a company name from a mismatched table) and contributed
 //   to a real "Refresh IPO Data" click hanging for minutes.
+// - ipopremium: HTTP 403 on every request — actively blocked (bot
+//   detection), not just unreachable.
 //
-// ipopremiumProvider.ts, added after, is deliberately narrower than
-// ipowatch's approach: it only ever fetches the fixed homepage URL, never
-// follows a link to a guessed subpage — see its file header for why.
-//
-// All three files are left in the codebase; chittorgarh/ipowatch are a
-// starting point for a future, properly-scoped fix. Whatever no active
-// provider publishes stays fillable via manual add/edit — always
+// All three files are left in the codebase as a starting point for a
+// future, properly-scoped fix (or a genuine paid/documented API, if one
+// is ever actually available — see conversation history for why guessing
+// at more scraping targets was retired as an approach). Whatever no
+// active provider publishes stays fillable via manual add/edit — always
 // available, per this app's original design.
-const PROVIDERS: IpoDataProvider[] = [nseProvider, ipopremiumProvider];
+const PROVIDERS: IpoDataProvider[] = [nseProvider];
 
 /**
  * Hard ceiling on a single provider's fetch(), independent of whatever
