@@ -10,6 +10,7 @@ import {
   Users,
   Wallet,
   Settings,
+  ShieldCheck,
   LogOut,
   Download,
   Menu,
@@ -32,7 +33,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor";
+  const canEdit = role === "editor" || role === "admin";
+  const isAdmin = role === "admin";
 
   const navLinks = (
     <nav className="flex flex-1 flex-col gap-1 px-2">
@@ -69,6 +71,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <Settings size={17} />
           Settings
+        </Link>
+      )}
+      {isAdmin && (
+        <Link
+          href="/admin"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            pathname === "/admin"
+              ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          )}
+        >
+          <ShieldCheck size={17} />
+          Admin
         </Link>
       )}
       <a
@@ -142,7 +159,7 @@ function UserFooter() {
         {session?.user?.name ?? "Signed in"}
       </p>
       <p className="mb-2 text-xs capitalize text-slate-500 dark:text-slate-400">
-        {role === "editor" ? "Full access" : "View only"}
+        {role === "admin" ? "Admin (full access)" : role === "editor" ? "Full access" : "View only"}
       </p>
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}

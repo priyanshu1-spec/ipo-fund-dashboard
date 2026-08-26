@@ -12,7 +12,7 @@ export default function SettingsPage() {
   const role = session?.user?.role;
 
   if (status === "loading") return <p className="text-sm text-slate-400">Loading…</p>;
-  if (role !== "editor") {
+  if (role !== "editor" && role !== "admin") {
     return (
       <div className="card flex items-center gap-3">
         <ShieldOff className="text-red-500" size={20} />

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { createApplication, listApplications } from "@/lib/repositories/applications";
+import { recordActivity } from "@/lib/repositories/activityLog";
 
 const applicationInputSchema = z.object({
   ipoId: z.string().min(1),
@@ -43,5 +44,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const application = await createApplication(parsed.data, auth.actor);
+  await recordActivity({
+    userId: auth.userId,
+    userName: auth.actor,
+    action: "create",
+    entityType: "application",
+    entityId: application.id,
+    entityLabel: application.ipoName,
+  });
   return NextResponse.json({ application }, { status: 201 });
 }

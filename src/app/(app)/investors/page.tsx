@@ -26,8 +26,8 @@ const emptyForm: Partial<InvestorRow> = {
 export default function InvestorsPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor";
-  const canDelete = role === "editor";
+  const canEdit = role === "editor" || role === "admin";
+  const canDelete = role === "editor" || role === "admin";
 
   const { data, mutate, isLoading } = useSWR<{ investors: InvestorRow[] }>("/api/investors", fetcher);
   const { data: summaryData } = useSWR<{ summary: DashboardSummary }>("/api/dashboard/summary", fetcher);

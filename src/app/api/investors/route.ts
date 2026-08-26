@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { createInvestor, listInvestors } from "@/lib/repositories/investors";
+import { recordActivity } from "@/lib/repositories/activityLog";
 
 const investorInputSchema = z.object({
   name: z.string().min(1),
@@ -33,5 +34,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const investor = await createInvestor(parsed.data);
+  await recordActivity({
+    userId: auth.userId,
+    userName: auth.actor,
+    action: "create",
+    entityType: "investor",
+    entityId: investor.id,
+    entityLabel: investor.name,
+  });
   return NextResponse.json({ investor }, { status: 201 });
 }

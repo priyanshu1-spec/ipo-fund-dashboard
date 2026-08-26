@@ -4,7 +4,35 @@
 // shape of each table's rows. Keep in sync with docs/SCHEMA.md.
 // ============================================================================
 
-export type UserRole = "editor" | "viewer";
+export type UserRole = "admin" | "editor" | "viewer";
+
+/** pending: registered, awaiting an admin's approve/reject. disabled: was approved, access later revoked. */
+export type UserAccountStatus = "pending" | "approved" | "rejected" | "disabled";
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  status: UserAccountStatus;
+  createdAt: string;
+  approvedAt: string;
+  approvedBy: string;
+}
+
+export type ActivityAction = "create" | "update" | "delete";
+
+export interface ActivityLogEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  action: ActivityAction;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  details: string;
+  createdAt: string;
+}
 
 export type IpoType = "Mainboard" | "SME";
 

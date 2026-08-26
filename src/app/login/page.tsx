@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -8,6 +9,7 @@ import { TrendingUp } from "lucide-react";
 function LoginCard() {
   const { status } = useSession();
   const router = useRouter();
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -20,10 +22,14 @@ function LoginCard() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const result = await signIn("credentials", { password, redirect: false });
+    const result = await signIn("credentials", { email, password, redirect: false });
     setSubmitting(false);
     if (result?.error) {
-      setError("Wrong password. Ask whoever gave you access to double-check it.");
+      setError(
+        email
+          ? "Wrong email/password, or your account hasn't been approved by an admin yet."
+          : "Wrong password. Ask whoever gave you access to double-check it."
+      );
       return;
     }
     router.replace("/");
@@ -37,20 +43,32 @@ function LoginCard() {
       </div>
       <h1 className="text-lg font-bold text-slate-900 dark:text-white">IPO Fund Dashboard</h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Private access only. Enter the access password you were given.
+        Private access only. Sign in with your account, or the shared access password if that&apos;s
+        what you were given.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-3 text-left">
+        <div>
+          <label className="label">Email (leave blank if you were given a shared password)</label>
+          <input
+            type="email"
+            className="input"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        </div>
         <div>
           <label className="label">Password</label>
           <input
             type="password"
             required
-            autoFocus
             className="input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
+            autoComplete="current-password"
           />
         </div>
         {error && (
@@ -63,6 +81,13 @@ function LoginCard() {
         </button>
       </form>
 
+      <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+        No account yet?{" "}
+        <Link href="/register" className="font-medium text-brand-600 hover:underline">
+          Request access
+        </Link>
+        {" "}— an admin will need to approve it.
+      </p>
     </div>
   );
 }

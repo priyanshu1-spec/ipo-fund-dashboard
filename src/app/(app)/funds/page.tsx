@@ -27,8 +27,8 @@ const emptyForm: Partial<FundAllocationRow> = {
 export default function FundsPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor";
-  const canDelete = role === "editor";
+  const canEdit = role === "editor" || role === "admin";
+  const canDelete = role === "editor" || role === "admin";
 
   const { data, mutate, isLoading } = useSWR<{ funds: FundAllocationRow[] }>("/api/funds", fetcher);
   const { data: appsData } = useSWR<{ applications: ApplicationRow[] }>("/api/applications", fetcher);

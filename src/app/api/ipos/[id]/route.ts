@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { deleteIpo, getIpo, updateIpo } from "@/lib/repositories/ipos";
+import { recordActivity } from "@/lib/repositories/activityLog";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireApiAuth("viewer");
@@ -16,6 +17,14 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const patch = await req.json();
   try {
     const ipo = await updateIpo(params.id, patch);
+    await recordActivity({
+      userId: auth.userId,
+      userName: auth.actor,
+      action: "update",
+      entityType: "ipo",
+      entityId: ipo.id,
+      entityLabel: ipo.name,
+    });
     return NextResponse.json({ ipo });
   } catch (err) {
     return NextResponse.json(
@@ -28,6 +37,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireApiAuth("editor");
   if (!isAuthedContext(auth)) return auth;
+  const existing = await getIpo(params.id);
   await deleteIpo(params.id);
+  await recordActivity({
+    userId: auth.userId,
+    userName: auth.actor,
+    action: "delete",
+    entityType: "ipo",
+    entityId: params.id,
+    entityLabel: existing?.name ?? params.id,
+  });
   return NextResponse.json({ ok: true });
 }

@@ -51,8 +51,8 @@ interface RefreshResult {
 export default function IposPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor";
-  const canDelete = role === "editor";
+  const canEdit = role === "editor" || role === "admin";
+  const canDelete = role === "editor" || role === "admin";
 
   const { data, mutate, isLoading } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
   const ipos = data?.ipos ?? [];

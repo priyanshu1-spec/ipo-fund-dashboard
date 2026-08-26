@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
-import { deleteFundAllocation, updateFundAllocation } from "@/lib/repositories/funds";
+import { deleteFundAllocation, getFundAllocation, updateFundAllocation } from "@/lib/repositories/funds";
+import { recordActivity } from "@/lib/repositories/activityLog";
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireApiAuth("editor");
@@ -8,6 +9,14 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const patch = await req.json();
   try {
     const fund = await updateFundAllocation(params.id, patch);
+    await recordActivity({
+      userId: auth.userId,
+      userName: auth.actor,
+      action: "update",
+      entityType: "fund",
+      entityId: fund.id,
+      entityLabel: fund.ipoName,
+    });
     return NextResponse.json({ fund });
   } catch (err) {
     return NextResponse.json(
@@ -20,6 +29,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireApiAuth("editor");
   if (!isAuthedContext(auth)) return auth;
+  const existing = await getFundAllocation(params.id);
   await deleteFundAllocation(params.id);
+  await recordActivity({
+    userId: auth.userId,
+    userName: auth.actor,
+    action: "delete",
+    entityType: "fund",
+    entityId: params.id,
+    entityLabel: existing?.ipoName ?? params.id,
+  });
   return NextResponse.json({ ok: true });
 }

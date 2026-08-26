@@ -6,10 +6,13 @@ import type { UserRole } from "@/types";
 export interface AuthedContext {
   session: Session;
   role: UserRole;
+  /** Human-readable name for audit trails (created_by, activity log) — falls back to the role for the legacy shared-password path, which has no real name. */
   actor: string;
+  /** Stable id for the activity log — the DB user id for a real account, or a fixed "bootstrap-admin"/"bootstrap-viewer" for the legacy shared-password path. */
+  userId: string;
 }
 
-const RANK: Record<UserRole, number> = { viewer: 0, editor: 1 };
+const RANK: Record<UserRole, number> = { viewer: 0, editor: 1, admin: 2 };
 
 /**
  * Guards an API route handler server-side — this is the actual security
@@ -26,7 +29,7 @@ export async function requireApiAuth(minRole?: UserRole): Promise<AuthedContext 
   if (minRole && RANK[role] < RANK[minRole]) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
-  return { session, role, actor: session.user?.name || role };
+  return { session, role, actor: session.user?.name || role, userId: session.user?.id || role };
 }
 
 export function isAuthedContext(x: AuthedContext | NextResponse): x is AuthedContext {

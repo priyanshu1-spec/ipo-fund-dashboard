@@ -4,11 +4,11 @@ A private IPO tracking and multi-account fund allocation dashboard. Next.js
 14 (App Router) + TypeScript + Tailwind CSS, server-side Postgres, and
 automated IPO data fetching. Deploys free on Vercel.
 
-**Status**: Milestone 1 of a larger build — server-side database, automated
-IPO fetching, scheduler, and admin refresh are done. Real per-person
-accounts/approval, an admin panel, and activity/submission tracking are
-planned for later milestones (see `docs/DEPLOYMENT.md` and inline comments
-in `src/lib/auth.ts` for exactly what's in place today vs. planned).
+**Status**: Milestones 1 and 2 done. Server-side database, automated IPO
+fetching, scheduler, and admin refresh (Milestone 1); real per-person
+accounts with admin approval, role management, and an activity/submission
+audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
+`src/lib/auth.ts` for exactly how access works today.
 
 ## What it does
 
@@ -33,6 +33,11 @@ in `src/lib/auth.ts` for exactly what's in place today vs. planned).
 - **Data source health & fetch logs** (Settings page) — see whether NSE
   fetching is currently working, and the history of every sync attempt.
 - **Excel export** — full server-side backup on demand.
+- **Real per-person accounts** — sign up at `/register`, an admin approves
+  and assigns a role (viewer/editor/admin) from the `/admin` panel. The
+  original shared password(s) still work too, as a bootstrap/recovery path.
+- **Activity log** (Admin panel) — every create/update/delete across IPOs,
+  applications, funds, and investors, with who did it and when.
 
 ## Automated IPO data fetching — how and what's realistic
 
@@ -82,20 +87,22 @@ src/
       funds/           # Module C — Fund Allocation
       investors/       # Investor Master + live ledger
       settings/        # Data source health, fetch logs, access info
-    login/
+      admin/           # user approval/roles + activity log (admin role only)
+    login/, register/
     api/
       ipos/, ipos/upcoming|open|closed, ipos/[id]/history|subscription-history
       applications/, funds/, investors/, dashboard/summary, export
       admin/ipo/refresh|fetch-status|fetch-logs
+      admin/users, admin/users/[id], admin/activity
       cron/sync-ipos    # scheduled entry point (CRON_SECRET-protected)
-      auth/              # NextAuth sign-in
+      auth/              # NextAuth sign-in + /auth/register
   components/          # Reusable UI (AppShell, Modal, MetricCard, ...)
   lib/
     db.ts                 # Postgres client + schema
-    repositories/            # typed CRUD + history per entity
-    ipoProviders/              # pluggable data source interface + NSE provider
+    repositories/            # typed CRUD + history per entity, incl. users + activityLog
+    ipoProviders/              # pluggable data source interface: NSE + Chittorgarh
     ipoSync.ts                   # orchestrator: fetch -> validate -> normalize -> store -> log
-    auth.ts, apiAuth.ts             # NextAuth + server-side API route guard
+    auth.ts, apiAuth.ts             # NextAuth (DB users + legacy shared password) + API guard
     calculations.ts                   # dashboard/ledger/profit math
   types/                # shared TypeScript types — the schema, in effect
 ```

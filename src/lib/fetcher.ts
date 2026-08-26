@@ -5,7 +5,7 @@ export const fetcher = (url: string) => fetch(url).then((res) => {
 
 export async function apiRequest<T = unknown>(
   url: string,
-  method: "POST" | "PUT" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
   const res = await fetch(url, {

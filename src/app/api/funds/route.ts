@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { createFundAllocation, listFundAllocations } from "@/lib/repositories/funds";
+import { recordActivity } from "@/lib/repositories/activityLog";
 
 const fundInputSchema = z.object({
   applicationId: z.string().min(1),
@@ -36,5 +37,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const fund = await createFundAllocation(parsed.data);
+  await recordActivity({
+    userId: auth.userId,
+    userName: auth.actor,
+    action: "create",
+    entityType: "fund",
+    entityId: fund.id,
+    entityLabel: fund.ipoName,
+  });
   return NextResponse.json({ fund }, { status: 201 });
 }

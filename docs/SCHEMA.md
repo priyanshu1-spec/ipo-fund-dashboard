@@ -77,5 +77,38 @@ One row per provider, upserted after every run.
 
 Same shape as before (see field-by-field list in `src/types/index.ts`), now
 persisted server-side instead of the browser. Each carries an `owner_id`
-column (defaulted to `'admin'` for this milestone) so Milestone 2 can scope
-data per real user account without another migration.
+column (still defaulted to `'admin'` — this app remains single-tenant: all
+signed-in users share the same Applications/Funds/Investors data, scoped by
+*role* rather than by account).
+
+## `users` — Milestone 2, real per-person accounts
+
+| Column | Notes |
+|---|---|
+| id | `user_xxxxxxxx` |
+| email | unique, case-insensitive |
+| password_hash | bcrypt |
+| name | |
+| role | `viewer` \| `editor` \| `admin` — set by an admin, defaults to `viewer` at signup |
+| status | `pending` \| `approved` \| `rejected` \| `disabled` — only `approved` can sign in |
+| created_at, approved_at, approved_by | |
+
+Sign-up (`/register`) always creates a `pending` row with role `viewer`; an
+admin changes status/role from `/admin`. The original Milestone 1 shared
+passwords (`APP_ACCESS_PASSWORD` → role `admin`, `APP_VIEWER_PASSWORD` →
+role `viewer`) still work as a bootstrap/recovery path and don't touch this
+table at all — see `src/lib/auth.ts`.
+
+## `activity_log` — Milestone 2, audit trail
+
+Append-only. One row per create/update/delete made through the API (IPOs,
+applications, funds, investors, and user approval/role changes).
+
+| Column | Notes |
+|---|---|
+| id | `act_xxxxxxxx` |
+| user_id, user_name | who did it (real user id, or the fixed `bootstrap-admin`/`bootstrap-viewer` id for the shared-password path) |
+| action | `create` \| `update` \| `delete` |
+| entity_type | `ipo` \| `application` \| `fund` \| `investor` \| `user` |
+| entity_id, entity_label | |
+| details, created_at | |

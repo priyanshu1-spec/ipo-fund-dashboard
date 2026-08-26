@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { createIpo, listIpos } from "@/lib/repositories/ipos";
+import { recordActivity } from "@/lib/repositories/activityLog";
 
 const ipoInputSchema = z.object({
   name: z.string().min(1),
@@ -53,5 +54,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const ipo = await createIpo({ ...parsed.data, dataSource: "Manual", isOfficial: false });
+  await recordActivity({
+    userId: auth.userId,
+    userName: auth.actor,
+    action: "create",
+    entityType: "ipo",
+    entityId: ipo.id,
+    entityLabel: ipo.name,
+  });
   return NextResponse.json({ ipo }, { status: 201 });
 }

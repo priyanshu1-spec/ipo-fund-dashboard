@@ -14,7 +14,7 @@ Vercel deploys from a git repo.
 
    | Variable | Value |
    |---|---|
-   | `APP_ACCESS_PASSWORD` | pick a password — full access |
+   | `APP_ACCESS_PASSWORD` | pick a password — grants the **admin** role (full access + user management) |
    | `APP_VIEWER_PASSWORD` | optional — read-only password |
    | `NEXTAUTH_SECRET` | generate with `openssl rand -base64 32` |
    | `NEXTAUTH_URL` | leave blank for now — fill in after step 4 |
@@ -43,7 +43,14 @@ Vercel deploys from a git repo.
 
 ## 4. Sign in
 
-Open your URL → enter your `APP_ACCESS_PASSWORD`.
+Open your URL → leave the email field blank → enter your `APP_ACCESS_PASSWORD`.
+This signs you in as admin.
+
+To bring in real users: send them your URL's `/register` page. Each
+sign-up lands as a **pending** request — approve it (and set its role)
+from the **Admin** page in the sidebar, which only shows for the admin
+role. The shared password(s) above keep working alongside real accounts —
+that's what gets you in to approve the very first one.
 
 ## 5. Automated IPO data fetching
 
