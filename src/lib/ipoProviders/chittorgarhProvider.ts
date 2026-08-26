@@ -100,20 +100,36 @@ interface TableRowData {
   [column: string]: string;
 }
 
+interface ExtractResult {
+  tables: TableRowData[][];
+  /**
+   * Populated only when zero tables matched, specifically so a failure is
+   * diagnosable from the fetch-log warning alone (Settings page) without
+   * needing live access to chittorgarh.com to see what actually changed —
+   * this sandbox can't reach it. Each entry is one <table>'s raw header
+   * cell text, in DOM order, so a real column layout can be read directly
+   * off the next failure instead of guessed at again.
+   */
+  diagnostics?: string[];
+}
+
 /** Scans every <table> on the page; for each one whose header row has a recognizable "name" column, yields its body rows as {columnKey: cellText} maps. Tables without a name column (nav, unrelated widgets) are silently skipped — not every table on a report page is the data table. */
-function extractTables($: cheerio.CheerioAPI): TableRowData[][] {
+function extractTables($: cheerio.CheerioAPI): ExtractResult {
   const tables: TableRowData[][] = [];
+  const allHeaderSets: string[] = [];
 
   $("table").each((_, table) => {
     const $table = $(table);
-    const headerCells = $table
+    const rawHeaderCells = $table
       .find("tr")
       .first()
       .find("th, td")
-      .map((__, cell) => normalizeHeader($(cell).text()))
+      .map((__, cell) => $(cell).text().trim())
       .get();
-    if (headerCells.length === 0) return;
+    if (rawHeaderCells.length === 0) return;
+    allHeaderSets.push(rawHeaderCells.join(" | "));
 
+    const headerCells = rawHeaderCells.map(normalizeHeader);
     const columnKeyByIndex: (string | undefined)[] = headerCells.map((header) => {
       for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
         if (aliases.some((alias) => header.includes(alias))) return key;
@@ -142,7 +158,14 @@ function extractTables($: cheerio.CheerioAPI): TableRowData[][] {
     if (rows.length > 0) tables.push(rows);
   });
 
-  return tables;
+  if (tables.length > 0) return { tables };
+  return {
+    tables,
+    diagnostics:
+      allHeaderSets.length > 0
+        ? allHeaderSets.slice(0, 5)
+        : ["No <table> elements found on the page at all — content may be JavaScript-rendered."],
+  };
 }
 
 type PageResult = { ok: true; $: cheerio.CheerioAPI } | { ok: false; warning: string };
@@ -209,9 +232,11 @@ export const chittorgarhProvider: IpoDataProvider = {
         warnings.push(page.warning);
         continue;
       }
-      const tables = extractTables(page.$);
+      const { tables, diagnostics } = extractTables(page.$);
       if (tables.length === 0) {
-        warnings.push(`No recognizable data table found on ${url} — chittorgarh.com's markup may have changed.`);
+        warnings.push(
+          `No recognizable data table found on ${url}. Tables seen: ${JSON.stringify(diagnostics)}`
+        );
         continue;
       }
       for (const rows of tables) {
@@ -226,9 +251,11 @@ export const chittorgarhProvider: IpoDataProvider = {
     if (!gmpPage.ok) {
       warnings.push(gmpPage.warning);
     } else {
-      const tables = extractTables(gmpPage.$);
+      const { tables, diagnostics } = extractTables(gmpPage.$);
       if (tables.length === 0) {
-        warnings.push(`No recognizable data table found on ${REPORT_URLS.gmp} — chittorgarh.com's markup may have changed.`);
+        warnings.push(
+          `No recognizable data table found on ${REPORT_URLS.gmp}. Tables seen: ${JSON.stringify(diagnostics)}`
+        );
       }
       for (const rows of tables) {
         for (const row of rows) {
