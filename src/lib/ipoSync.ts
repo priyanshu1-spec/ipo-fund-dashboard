@@ -19,14 +19,23 @@ import {
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
-import { chittorgarhProvider } from "@/lib/ipoProviders/chittorgarhProvider";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
 
 // Order matters only in that NSE (official) typically discovers a company
 // first; a later provider's row for the "same" IPO is matched onto it by
 // fuzzy name (see resolveIpoId) regardless of which ran first.
-const PROVIDERS: IpoDataProvider[] = [nseProvider, chittorgarhProvider];
+//
+// chittorgarhProvider.ts is NOT registered here: confirmed (not just
+// suspected) to return zero <table> elements in its raw HTML response —
+// its report pages are rendered client-side by JavaScript, which a plain
+// server-side fetch never executes. That's not a fixable selector/markup
+// problem without a headless browser (Puppeteer/Playwright), which is a
+// poor fit for a Vercel serverless function. Left in the codebase in case
+// a future source turns out to expose the same data via a real HTML
+// table or JSON endpoint, but it must stay out of PROVIDERS until then —
+// it was only adding latency and a permanent warning for zero rows.
+const PROVIDERS: IpoDataProvider[] = [nseProvider];
 
 /** Strip legal-entity noise so "XYZ Ltd" / "XYZ Limited" / "XYZ India Pvt Ltd" compare equal across sources that phrase the same company differently. */
 function normalizeCompanyName(name: string): string {
