@@ -69,8 +69,29 @@ export function ensureSchema(): Promise<void> {
   return schemaReady;
 }
 
-async function runSchema(): Promise<void> {
-  await sql`
+/**
+ * All schema DDL as ONE multi-statement string, run over ONE connection in
+ * a single round trip — not the 17 separate connect+query+close cycles
+ * this used to be (one per `await sql\`...\`` call). ensureSchema()'s
+ * module-level caching (schemaReady) already skips this entirely on a
+ * warm serverless instance, but a cold start — very likely for a
+ * low-traffic app — pays this cost on literally every repository call's
+ * first `await ensureSchema()`, since every one of them calls it before
+ * doing anything else. 17 sequential connections at even a modest
+ * ~1-2s each (Supabase pooler latency from Vercel) is 17-34+ seconds
+ * BEFORE a single real query runs — this was a large, possibly the
+ * largest, contributor to a "Refresh IPO Data" click's total time
+ * (confirmed via the timing breakdown ipoSync.ts now logs: write=41744ms
+ * for just 9 rows, far more than 9 rows' worth of actual query work).
+ *
+ * Safe as one batch: none of these statements take parameters, node-pg's
+ * simple query protocol (used when Client.query() is called with just a
+ * string, no values array) runs semicolon-separated statements in order
+ * within one round trip, and CREATE TABLE/INDEX IF NOT EXISTS plus
+ * ALTER...IF NOT EXISTS are all idempotent — re-running this whole batch
+ * on every cold start is still correct, just now cheap.
+ */
+const SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS ipos (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL DEFAULT '',
@@ -110,17 +131,15 @@ async function runSchema(): Promise<void> {
       last_synced_at TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT ''
     );
-  `;
 
-  // Migration: lot_size used to be NOT NULL DEFAULT 0, which silently turned
-  // "NSE didn't publish this yet" into a fabricated 0. A table created before
-  // this change still carries that constraint even though CREATE TABLE IF
-  // NOT EXISTS above won't touch it — drop it explicitly. No-op (and safe to
-  // run every cold start) once already applied.
-  await sql`ALTER TABLE ipos ALTER COLUMN lot_size DROP NOT NULL;`;
-  await sql`ALTER TABLE ipos ALTER COLUMN lot_size DROP DEFAULT;`;
+    -- Migration: lot_size used to be NOT NULL DEFAULT 0, which silently
+    -- turned "NSE didn't publish this yet" into a fabricated 0. A table
+    -- created before this change still carries that constraint even
+    -- though CREATE TABLE IF NOT EXISTS above won't touch it — drop it
+    -- explicitly. No-op (and safe to run every cold start) once applied.
+    ALTER TABLE ipos ALTER COLUMN lot_size DROP NOT NULL;
+    ALTER TABLE ipos ALTER COLUMN lot_size DROP DEFAULT;
 
-  await sql`
     CREATE TABLE IF NOT EXISTS ipo_gmp_history (
       id TEXT PRIMARY KEY,
       ipo_id TEXT NOT NULL REFERENCES ipos(id) ON DELETE CASCADE,
@@ -128,10 +147,8 @@ async function runSchema(): Promise<void> {
       recorded_at TEXT NOT NULL,
       source TEXT NOT NULL DEFAULT ''
     );
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_gmp_history_ipo ON ipo_gmp_history(ipo_id, recorded_at);`;
+    CREATE INDEX IF NOT EXISTS idx_gmp_history_ipo ON ipo_gmp_history(ipo_id, recorded_at);
 
-  await sql`
     CREATE TABLE IF NOT EXISTS ipo_subscription_history (
       id TEXT PRIMARY KEY,
       ipo_id TEXT NOT NULL REFERENCES ipos(id) ON DELETE CASCADE,
@@ -144,10 +161,8 @@ async function runSchema(): Promise<void> {
       recorded_at TEXT NOT NULL,
       source TEXT NOT NULL DEFAULT ''
     );
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_sub_history_ipo ON ipo_subscription_history(ipo_id, recorded_at);`;
+    CREATE INDEX IF NOT EXISTS idx_sub_history_ipo ON ipo_subscription_history(ipo_id, recorded_at);
 
-  await sql`
     CREATE TABLE IF NOT EXISTS ipo_fetch_logs (
       id TEXT PRIMARY KEY,
       provider TEXT NOT NULL,
@@ -159,10 +174,8 @@ async function runSchema(): Promise<void> {
       records_updated INTEGER NOT NULL DEFAULT 0,
       error_message TEXT NOT NULL DEFAULT ''
     );
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_fetch_logs_started ON ipo_fetch_logs(started_at DESC);`;
+    CREATE INDEX IF NOT EXISTS idx_fetch_logs_started ON ipo_fetch_logs(started_at DESC);
 
-  await sql`
     CREATE TABLE IF NOT EXISTS ipo_sources (
       provider TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'unknown',
@@ -170,9 +183,7 @@ async function runSchema(): Promise<void> {
       last_error TEXT NOT NULL DEFAULT '',
       last_run_at TEXT NOT NULL DEFAULT ''
     );
-  `;
 
-  await sql`
     CREATE TABLE IF NOT EXISTS investors (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL DEFAULT 'admin',
@@ -188,9 +199,7 @@ async function runSchema(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT ''
     );
-  `;
 
-  await sql`
     CREATE TABLE IF NOT EXISTS applications (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL DEFAULT 'admin',
@@ -218,9 +227,7 @@ async function runSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT ''
     );
-  `;
 
-  await sql`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -233,11 +240,9 @@ async function runSchema(): Promise<void> {
       approved_by TEXT NOT NULL DEFAULT '',
       last_active_at TEXT NOT NULL DEFAULT ''
     );
-  `;
-  // Migration for a table created before last_active_at existed.
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TEXT NOT NULL DEFAULT '';`;
+    -- Migration for a table created before last_active_at existed.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TEXT NOT NULL DEFAULT '';
 
-  await sql`
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT '',
@@ -249,10 +254,8 @@ async function runSchema(): Promise<void> {
       details TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT ''
     );
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);`;
+    CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
 
-  await sql`
     CREATE TABLE IF NOT EXISTS fund_allocations (
       id TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL DEFAULT 'admin',
@@ -271,5 +274,14 @@ async function runSchema(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT ''
     );
-  `;
+`;
+
+async function runSchema(): Promise<void> {
+  const client = new Client({ connectionString: connectionString(), ssl: { rejectUnauthorized: false } });
+  await client.connect();
+  try {
+    await client.query(SCHEMA_SQL);
+  } finally {
+    await client.end();
+  }
 }

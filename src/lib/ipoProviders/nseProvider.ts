@@ -16,12 +16,19 @@
 // and are treated as official.
 //
 // Field-name note: NSE's response shape isn't documented and has drifted
-// before, and several fields (lot size, allotment/listing dates) are often
-// simply not published yet for an issue still in "Upcoming" status — that's
-// a real gap in NSE's own data, not a bug here. `pick()` tries several
-// known/plausible field-name variants per value and only fills a field when
-// one actually matches; anything it can't find is left undefined rather
-// than guessed at, so a missing field never becomes a fabricated 0 or date.
+// before, so `pick()` tries several known/plausible field-name variants per
+// value and only fills a field when one actually matches; anything it can't
+// find is left undefined rather than guessed at, so a missing field never
+// becomes a fabricated 0 or date.
+//
+// CONFIRMED (not a guess): this endpoint's rows simply do not include lot
+// size at all, under any name — captured raw NSE JSON for several live
+// rows shows only companyName, issueEndDate, issuePrice, issueSize,
+// issueStartDate, series, status, symbol. No amount of key-list tuning
+// fixes this; the field isn't in the payload NSE sends here. Same likely
+// applies to allotment/listing dates, though that's less certain — the
+// diagnostic in fetch() below still captures a raw row whenever lot size
+// comes back empty, in case NSE ever adds the field to this endpoint.
 //
 // If NSE changes this endpoint's shape or blocks it outright, this provider
 // simply returns zero rows + a warning — it never falls back to scraping a
