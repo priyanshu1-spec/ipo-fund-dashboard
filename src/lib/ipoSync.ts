@@ -26,7 +26,7 @@ import type { IpoDataSource, IpoRow } from "@/types";
 
 // Order matters only in that NSE (official) typically discovers a company
 // first; a later provider's row for the "same" IPO is matched onto it by
-// fuzzy name (see resolveIpoId) regardless of which ran first.
+// fuzzy name (see resolveIpo) regardless of which ran first.
 //
 // chittorgarhProvider.ts and ipowatchProvider.ts are NOT registered —
 // both were tried and pulled after real, confirmed failures:
@@ -93,21 +93,30 @@ function normalizeCompanyName(name: string): string {
 }
 
 /**
- * Resolves which DB row a provider's item belongs to. Tries the exact
- * slug-derived id first (fast path — matches when a provider re-reports the
- * same spelling, which is the common case). If that misses, looks for
- * exactly one existing row of the same type whose normalized name matches or
- * contains/[is contained by] the incoming name — this is what lets a
- * secondary source (different exact company-name spelling) supplement an
- * existing row instead of creating a duplicate. Ambiguous (0 or 2+ matches)
- * falls back to the exact-slug id, i.e. its own new row.
+ * Resolves which DB row a provider's item belongs to, AND returns that row
+ * if found — the caller (applyNormalizedIpo) needs the full row anyway to
+ * merge into, and re-fetching it separately would be a second full
+ * connect+query+close round trip to Postgres for no reason (db.ts opens a
+ * fresh connection per query, deliberately, so every avoidable query here
+ * is real latency, not just noise — this was actually costing real
+ * wall-clock time on every sync until fixed).
+ *
+ * Tries the exact slug-derived id first (fast path — matches when a
+ * provider re-reports the same spelling, which is the common case). If
+ * that misses, looks for exactly one existing row of the same type whose
+ * normalized name matches or contains/[is contained by] the incoming name
+ * — this is what lets a secondary source (different exact company-name
+ * spelling) supplement an existing row instead of creating a duplicate.
+ * Ambiguous (0 or 2+ matches) falls back to the exact-slug id with no
+ * existing row, i.e. a fresh insert.
  */
-async function resolveIpoId(item: NormalizedIpo): Promise<string> {
+async function resolveIpo(item: NormalizedIpo): Promise<{ id: string; existing: IpoRow | undefined }> {
   const exactId = generateIpoId(item.name, item.type);
-  if (await getIpo(exactId)) return exactId;
+  const exactMatch = await getIpo(exactId);
+  if (exactMatch) return { id: exactId, existing: exactMatch };
 
   const normalizedIncoming = normalizeCompanyName(item.name);
-  if (!normalizedIncoming) return exactId;
+  if (!normalizedIncoming) return { id: exactId, existing: undefined };
 
   const candidates = await listIpoIdsAndNames(item.type);
   const matches = candidates.filter((c) => {
@@ -119,7 +128,12 @@ async function resolveIpoId(item: NormalizedIpo): Promise<string> {
       normalizedIncoming.includes(normalizedExisting)
     );
   });
-  return matches.length === 1 ? matches[0].id : exactId;
+  if (matches.length !== 1) return { id: exactId, existing: undefined };
+
+  // Still need one fetch here — listIpoIdsAndNames only returns id+name,
+  // not the full row the caller needs to merge into.
+  const fuzzyMatch = await getIpo(matches[0].id);
+  return { id: matches[0].id, existing: fuzzyMatch };
 }
 
 export interface ProviderRunSummary {
@@ -155,8 +169,7 @@ async function applyNormalizedIpo(
   item: NormalizedIpo,
   provider: IpoDataProvider
 ): Promise<"inserted" | "updated"> {
-  const id = await resolveIpoId(item);
-  const existing = await getIpo(id);
+  const { id, existing } = await resolveIpo(item);
   const now = new Date().toISOString();
 
   const patch: Partial<IpoRow> = {
@@ -228,7 +241,7 @@ async function applyNormalizedIpo(
   }
 
   if (existing) {
-    await updateIpo(id, patch);
+    await updateIpo(id, patch, existing);
     return "updated";
   }
   await createIpo({ ...patch, id });
@@ -268,17 +281,19 @@ export async function runIpoSync(): Promise<SyncSummary> {
   const fetchOutcomes = await Promise.all(
     PROVIDERS.map(async (provider) => {
       const providerStart = new Date().toISOString();
+      const fetchStartMs = Date.now();
       try {
         const result = await withHardTimeout(
           provider.fetch(),
           PROVIDER_FETCH_TIMEOUT_MS,
           `${provider.displayName} fetch`
         );
-        return { provider, providerStart, result, fetchError: "" };
+        return { provider, providerStart, fetchMs: Date.now() - fetchStartMs, result, fetchError: "" };
       } catch (err) {
         return {
           provider,
           providerStart,
+          fetchMs: Date.now() - fetchStartMs,
           result: null,
           fetchError: err instanceof Error ? err.message : String(err),
         };
@@ -287,16 +302,17 @@ export async function runIpoSync(): Promise<SyncSummary> {
   );
 
   // Write stage: sequential, in PROVIDERS order — preserves "NSE
-  // (official) discovers a company first" semantics that resolveIpoId's
+  // (official) discovers a company first" semantics that resolveIpo's
   // fuzzy name-matching relies on, and avoids two providers writing to
   // possibly-overlapping rows concurrently.
   const providerSummaries: ProviderRunSummary[] = [];
-  for (const { provider, providerStart, result, fetchError } of fetchOutcomes) {
+  for (const { provider, providerStart, fetchMs, result, fetchError } of fetchOutcomes) {
     let inserted = 0;
     let updated = 0;
     let found = 0;
     let error = fetchError;
     let success = !fetchError;
+    const writeStartMs = Date.now();
 
     if (result) {
       try {
@@ -335,6 +351,20 @@ export async function runIpoSync(): Promise<SyncSummary> {
         error = err instanceof Error ? err.message : String(err);
       }
     }
+
+    // Timing breakdown, always appended (not just on failure) — this is
+    // what makes the next slow-refresh report diagnosable from the fetch
+    // log directly instead of requiring another guess at where the time
+    // went. writeMs covers validation + every applyNormalizedIpo() DB
+    // round trip for this provider's rows; db.ts opens a fresh Postgres
+    // connection per query, so this is the number to watch if a sync is
+    // slow with a healthy (fast) fetchMs — it means the row count or the
+    // database connection itself, not the external source, is the
+    // bottleneck.
+    const writeMs = Date.now() - writeStartMs;
+    error = error
+      ? `${error} | timing: fetch=${fetchMs}ms write=${writeMs}ms`
+      : `timing: fetch=${fetchMs}ms write=${writeMs}ms`;
 
     const providerCompleted = new Date().toISOString();
     const summary: ProviderRunSummary = {

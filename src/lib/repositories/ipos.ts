@@ -161,9 +161,10 @@ export async function createIpo(input: Partial<IpoRow>): Promise<IpoRow> {
   return ipo;
 }
 
-export async function updateIpo(id: string, patch: Partial<IpoRow>): Promise<IpoRow> {
+/** `knownExisting`: pass the row if the caller already fetched it (e.g. ipoSync.ts's resolveIpo) to skip a redundant SELECT — db.ts opens a fresh Postgres connection per query, so an avoidable one is real latency, not just noise, especially across dozens of rows in one sync. Omit it and this fetches the row itself, as before. */
+export async function updateIpo(id: string, patch: Partial<IpoRow>, knownExisting?: IpoRow): Promise<IpoRow> {
   await ensureSchema();
-  const existing = await getIpo(id);
+  const existing = knownExisting ?? (await getIpo(id));
   if (!existing) throw new Error(`IPO ${id} not found`);
   const merged: IpoRow = { ...existing, ...patch, id };
   const columnsExceptId = IPO_COLUMNS.filter((c) => c !== "id");

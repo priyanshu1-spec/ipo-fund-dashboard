@@ -167,7 +167,13 @@ function FetchLogSection() {
                 <td className="td">
                   {l.recordsFound} / {l.recordsInserted} / {l.recordsUpdated}
                 </td>
-                <td className="td max-w-xs text-xs text-red-600">
+                <td
+                  className={`td max-w-xs text-xs ${
+                    l.success && l.errorMessage.startsWith("timing:")
+                      ? "text-slate-400 dark:text-slate-500"
+                      : "text-red-600"
+                  }`}
+                >
                   {l.errorMessage ? (
                     <details>
                       <summary className="cursor-pointer truncate">{l.errorMessage}</summary>
