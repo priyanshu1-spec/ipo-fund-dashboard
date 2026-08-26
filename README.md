@@ -33,11 +33,19 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
 - **Data source health & fetch logs** (Settings page) — see whether NSE
   fetching is currently working, and the history of every sync attempt.
 - **Excel export** — full server-side backup on demand.
-- **Real per-person accounts** — sign up at `/register`, an admin approves
-  and assigns a role (viewer/editor/admin) from the `/admin` panel. The
-  original shared password(s) still work too, as a bootstrap/recovery path.
-- **Activity log** (Admin panel) — every create/update/delete across IPOs,
-  applications, funds, and investors, with who did it and when.
+- **Real per-person accounts with strict data isolation** — sign up at
+  `/register`, an admin approves and assigns a role (viewer/editor/admin)
+  from the `/admin` panel. Every `viewer`/`editor` only ever sees, edits, or
+  deletes their **own** Applications/Funds/Investors — enforced in SQL on
+  every query, never just hidden in the UI. Only `admin` sees everyone's
+  data. Suspending, deleting, or re-roling an account takes effect on that
+  user's very next request, not whenever their session token expires. The
+  original shared password(s) still work too, as a bootstrap/recovery path
+  (grants `admin`).
+- **Admin panel** — approve/reject signups, manage roles, disable or
+  permanently delete accounts, see each user's last-active time, and a
+  real-time activity log of every create/update/delete across IPOs,
+  applications, funds, and investors.
 
 ## Automated IPO data fetching — how and what's realistic
 

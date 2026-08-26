@@ -18,6 +18,7 @@ export interface UserAccount {
   createdAt: string;
   approvedAt: string;
   approvedBy: string;
+  lastActiveAt: string;
 }
 
 export type ActivityAction = "create" | "update" | "delete";

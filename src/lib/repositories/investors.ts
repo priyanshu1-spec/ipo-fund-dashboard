@@ -2,8 +2,6 @@ import { ensureSchema, sql } from "@/lib/db";
 import { generateId } from "@/lib/id";
 import type { InvestorRow } from "@/types";
 
-const OWNER_ID = "admin"; // single-admin model for now; becomes real per-user in a later milestone
-
 function toInvestor(r: Record<string, unknown>): InvestorRow {
   return {
     id: String(r.id ?? ""),
@@ -21,19 +19,33 @@ function toInvestor(r: Record<string, unknown>): InvestorRow {
   };
 }
 
-export async function listInvestors(): Promise<InvestorRow[]> {
+/**
+ * Every function here takes `ownerId: string | null` — the calling user's
+ * id, or `null` for an admin (who sees/touches every row, unscoped). This
+ * is the RLS boundary for this app: there's no per-request Postgres role to
+ * hang a native RLS policy off (see src/lib/db.ts), so isolation is
+ * enforced here, in SQL, on every statement — never left to the API route
+ * layer to remember to filter after the fact.
+ */
+export async function listInvestors(ownerId: string | null): Promise<InvestorRow[]> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM investors WHERE owner_id = ${OWNER_ID} ORDER BY name ASC`;
+  const { rows } =
+    ownerId == null
+      ? await sql`SELECT * FROM investors ORDER BY name ASC`
+      : await sql`SELECT * FROM investors WHERE owner_id = ${ownerId} ORDER BY name ASC`;
   return rows.map(toInvestor);
 }
 
-export async function getInvestor(id: string): Promise<InvestorRow | undefined> {
+export async function getInvestor(id: string, ownerId: string | null): Promise<InvestorRow | undefined> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM investors WHERE id = ${id}`;
+  const { rows } =
+    ownerId == null
+      ? await sql`SELECT * FROM investors WHERE id = ${id}`
+      : await sql`SELECT * FROM investors WHERE id = ${id} AND owner_id = ${ownerId}`;
   return rows[0] ? toInvestor(rows[0]) : undefined;
 }
 
-export async function createInvestor(input: Partial<InvestorRow>): Promise<InvestorRow> {
+export async function createInvestor(input: Partial<InvestorRow>, ownerId: string): Promise<InvestorRow> {
   await ensureSchema();
   const investor: InvestorRow = {
     id: generateId("inv"),
@@ -54,7 +66,7 @@ export async function createInvestor(input: Partial<InvestorRow>): Promise<Inves
       id, owner_id, name, relationship, phone, email, default_bank_account, default_bank_ifsc,
       demand_account_number, pan_masked, status, created_at, notes
     ) VALUES (
-      ${investor.id}, ${OWNER_ID}, ${investor.name}, ${investor.relationship}, ${investor.phone}, ${investor.email},
+      ${investor.id}, ${ownerId}, ${investor.name}, ${investor.relationship}, ${investor.phone}, ${investor.email},
       ${investor.defaultBankAccount}, ${investor.defaultBankIfsc}, ${investor.demandAccountNumber},
       ${investor.panMasked}, ${investor.status}, ${investor.createdAt}, ${investor.notes}
     )
@@ -64,10 +76,11 @@ export async function createInvestor(input: Partial<InvestorRow>): Promise<Inves
 
 export async function updateInvestor(
   id: string,
-  patch: Partial<InvestorRow>
+  patch: Partial<InvestorRow>,
+  ownerId: string | null
 ): Promise<InvestorRow> {
   await ensureSchema();
-  const existing = await getInvestor(id);
+  const existing = await getInvestor(id, ownerId);
   if (!existing) throw new Error(`Investor ${id} not found`);
   const merged: InvestorRow = { ...existing, ...patch, id };
   await sql`
@@ -81,7 +94,11 @@ export async function updateInvestor(
   return merged;
 }
 
-export async function deleteInvestor(id: string): Promise<void> {
+export async function deleteInvestor(id: string, ownerId: string | null): Promise<void> {
   await ensureSchema();
-  await sql`DELETE FROM investors WHERE id = ${id}`;
+  if (ownerId == null) {
+    await sql`DELETE FROM investors WHERE id = ${id}`;
+  } else {
+    await sql`DELETE FROM investors WHERE id = ${id} AND owner_id = ${ownerId}`;
+  }
 }

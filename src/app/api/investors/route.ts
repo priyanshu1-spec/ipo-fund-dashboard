@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
+import { isAuthedContext, requireApiAuth, scopeFor } from "@/lib/apiAuth";
 import { createInvestor, listInvestors } from "@/lib/repositories/investors";
 import { recordActivity } from "@/lib/repositories/activityLog";
 
@@ -20,7 +20,7 @@ const investorInputSchema = z.object({
 export async function GET() {
   const auth = await requireApiAuth("viewer");
   if (!isAuthedContext(auth)) return auth;
-  const investors = await listInvestors();
+  const investors = await listInvestors(scopeFor(auth));
   return NextResponse.json({ investors });
 }
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const investor = await createInvestor(parsed.data);
+  const investor = await createInvestor(parsed.data, auth.userId);
   await recordActivity({
     userId: auth.userId,
     userName: auth.actor,

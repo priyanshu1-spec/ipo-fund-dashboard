@@ -2,8 +2,6 @@ import { ensureSchema, sql } from "@/lib/db";
 import { generateId, num } from "@/lib/id";
 import type { FundAllocationRow } from "@/types";
 
-const OWNER_ID = "admin";
-
 function toFund(r: Record<string, unknown>): FundAllocationRow {
   return {
     id: String(r.id ?? ""),
@@ -24,20 +22,28 @@ function toFund(r: Record<string, unknown>): FundAllocationRow {
   };
 }
 
-export async function listFundAllocations(): Promise<FundAllocationRow[]> {
+/** ownerId: string | null — null means admin (unscoped, sees every row). See investors.ts for the full rationale. */
+export async function listFundAllocations(ownerId: string | null): Promise<FundAllocationRow[]> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM fund_allocations WHERE owner_id = ${OWNER_ID} ORDER BY created_at DESC NULLS LAST`;
+  const { rows } =
+    ownerId == null
+      ? await sql`SELECT * FROM fund_allocations ORDER BY created_at DESC NULLS LAST`
+      : await sql`SELECT * FROM fund_allocations WHERE owner_id = ${ownerId} ORDER BY created_at DESC NULLS LAST`;
   return rows.map(toFund);
 }
 
-export async function getFundAllocation(id: string): Promise<FundAllocationRow | undefined> {
+export async function getFundAllocation(id: string, ownerId: string | null): Promise<FundAllocationRow | undefined> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM fund_allocations WHERE id = ${id}`;
+  const { rows } =
+    ownerId == null
+      ? await sql`SELECT * FROM fund_allocations WHERE id = ${id}`
+      : await sql`SELECT * FROM fund_allocations WHERE id = ${id} AND owner_id = ${ownerId}`;
   return rows[0] ? toFund(rows[0]) : undefined;
 }
 
 export async function createFundAllocation(
-  input: Partial<FundAllocationRow>
+  input: Partial<FundAllocationRow>,
+  ownerId: string
 ): Promise<FundAllocationRow> {
   await ensureSchema();
   const fund: FundAllocationRow = {
@@ -63,7 +69,7 @@ export async function createFundAllocation(
       date_received, repayment_bank_account, amount_repaid, repayment_date, profit_share_amount,
       profit_share_status, created_at, notes
     ) VALUES (
-      ${fund.id}, ${OWNER_ID}, ${fund.applicationId}, ${fund.ipoName}, ${fund.investorId}, ${fund.investorName},
+      ${fund.id}, ${ownerId}, ${fund.applicationId}, ${fund.ipoName}, ${fund.investorId}, ${fund.investorName},
       ${fund.source}, ${fund.amountContributed}, ${fund.dateReceived}, ${fund.repaymentBankAccount},
       ${fund.amountRepaid}, ${fund.repaymentDate}, ${fund.profitShareAmount}, ${fund.profitShareStatus},
       ${fund.createdAt}, ${fund.notes}
@@ -74,10 +80,11 @@ export async function createFundAllocation(
 
 export async function updateFundAllocation(
   id: string,
-  patch: Partial<FundAllocationRow>
+  patch: Partial<FundAllocationRow>,
+  ownerId: string | null
 ): Promise<FundAllocationRow> {
   await ensureSchema();
-  const existing = await getFundAllocation(id);
+  const existing = await getFundAllocation(id, ownerId);
   if (!existing) throw new Error(`Fund allocation ${id} not found`);
   const merged: FundAllocationRow = { ...existing, ...patch, id };
   await sql`
@@ -94,7 +101,11 @@ export async function updateFundAllocation(
   return merged;
 }
 
-export async function deleteFundAllocation(id: string): Promise<void> {
+export async function deleteFundAllocation(id: string, ownerId: string | null): Promise<void> {
   await ensureSchema();
-  await sql`DELETE FROM fund_allocations WHERE id = ${id}`;
+  if (ownerId == null) {
+    await sql`DELETE FROM fund_allocations WHERE id = ${id}`;
+  } else {
+    await sql`DELETE FROM fund_allocations WHERE id = ${id} AND owner_id = ${ownerId}`;
+  }
 }

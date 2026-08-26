@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { ShieldOff, UserCheck, UserX, History } from "lucide-react";
+import { ShieldOff, UserCheck, UserX, History, Trash2 } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import type { ActivityLogEntry, UserAccount, UserAccountStatus, UserRole } from "@/types";
@@ -34,13 +34,13 @@ export default function AdminPage() {
         title="Admin"
         subtitle="Approve access requests, manage roles, and review who changed what."
       />
-      <UsersSection />
+      <UsersSection selfId={session?.user?.id} />
       <ActivitySection />
     </div>
   );
 }
 
-function UsersSection() {
+function UsersSection({ selfId }: { selfId?: string }) {
   const { data, mutate, isLoading } = useSWR<{ users: UserAccount[] }>("/api/admin/users", fetcher);
   const users = data?.users ?? [];
   const pending = users.filter((u) => u.status === "pending");
@@ -52,6 +52,12 @@ function UsersSection() {
 
   async function setRole(id: string, role: UserRole) {
     await apiRequest(`/api/admin/users/${id}`, "PATCH", { role });
+    mutate();
+  }
+
+  async function removeUser(id: string, email: string) {
+    if (!confirm(`Permanently delete ${email}'s account? This cannot be undone.`)) return;
+    await apiRequest(`/api/admin/users/${id}`, "DELETE");
     mutate();
   }
 
@@ -100,20 +106,21 @@ function UsersSection() {
               <th className="th">Role</th>
               <th className="th">Status</th>
               <th className="th">Requested</th>
+              <th className="th">Last Active</th>
               <th className="th">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="td py-6 text-center text-slate-400">
+                <td colSpan={7} className="td py-6 text-center text-slate-400">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && users.length === 0 && (
               <tr>
-                <td colSpan={6} className="td py-6 text-center text-slate-400">
+                <td colSpan={7} className="td py-6 text-center text-slate-400">
                   No registered accounts yet.
                 </td>
               </tr>
@@ -138,21 +145,35 @@ function UsersSection() {
                 </td>
                 <td className="td">{u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-IN") : "—"}</td>
                 <td className="td">
-                  {u.status === "approved" ? (
-                    <button
-                      onClick={() => setStatus(u.id, "disabled")}
-                      className="text-xs font-medium text-red-600 hover:underline"
-                    >
-                      Disable
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setStatus(u.id, "approved")}
-                      className="text-xs font-medium text-emerald-600 hover:underline"
-                    >
-                      Approve
-                    </button>
-                  )}
+                  {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleString("en-IN") : "Never"}
+                </td>
+                <td className="td">
+                  <div className="flex items-center gap-3">
+                    {u.status === "approved" ? (
+                      <button
+                        onClick={() => setStatus(u.id, "disabled")}
+                        className="text-xs font-medium text-red-600 hover:underline"
+                      >
+                        Disable
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setStatus(u.id, "approved")}
+                        className="text-xs font-medium text-emerald-600 hover:underline"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {u.id !== selfId && (
+                      <button
+                        onClick={() => removeUser(u.id, u.email)}
+                        title="Permanently delete this account"
+                        className="flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

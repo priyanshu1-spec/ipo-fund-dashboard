@@ -73,13 +73,29 @@ One row per provider, upserted after every run.
 | status | `healthy` \| `failing` \| `unknown` |
 | last_success_at, last_error, last_run_at | |
 
-## `investors`, `applications`, `fund_allocations` — Modules B/C/D, your personal data
+## `investors`, `applications`, `fund_allocations` — Modules B/C/D, per-user data
 
 Same shape as before (see field-by-field list in `src/types/index.ts`), now
-persisted server-side instead of the browser. Each carries an `owner_id`
-column (still defaulted to `'admin'` — this app remains single-tenant: all
-signed-in users share the same Applications/Funds/Investors data, scoped by
-*role* rather than by account).
+persisted server-side instead of the browser. Each row carries an
+`owner_id` — the id of the user who created it — and every query is
+scoped to it: a `viewer`/`editor` only ever sees, edits, or deletes their
+**own** rows, enforced in SQL on every statement (`WHERE owner_id = ...`,
+see `scopeFor()` in `src/lib/apiAuth.ts` and every function in
+`src/lib/repositories/{applications,funds,investors}.ts`) — never left as
+an app-layer-only check a route could forget. `admin` is the one role that
+bypasses this and sees/touches every row, unscoped, which is what the
+Admin panel's global view relies on.
+
+This app has no per-request Postgres role to hang a native `CREATE POLICY`
+off (see `src/lib/db.ts` — one shared connection, not a Supabase-style
+per-user session), so this is the practical equivalent of Postgres RLS for
+this architecture: identical isolation guarantee, enforced in the
+repository layer instead of the database layer.
+
+**Data created before this model existed** carries the literal string
+`'admin'` as its `owner_id`, which doesn't match any real user id — it's
+still fully visible and editable by any `admin`, just invisible to
+`editor`/`viewer` accounts unless reassigned.
 
 ## `users` — Milestone 2, real per-person accounts
 
@@ -92,12 +108,26 @@ signed-in users share the same Applications/Funds/Investors data, scoped by
 | role | `viewer` \| `editor` \| `admin` — set by an admin, defaults to `viewer` at signup |
 | status | `pending` \| `approved` \| `rejected` \| `disabled` — only `approved` can sign in |
 | created_at, approved_at, approved_by | |
+| last_active_at | stamped on every authenticated API request (see below) |
 
 Sign-up (`/register`) always creates a `pending` row with role `viewer`; an
 admin changes status/role from `/admin`. The original Milestone 1 shared
 passwords (`APP_ACCESS_PASSWORD` → role `admin`, `APP_VIEWER_PASSWORD` →
 role `viewer`) still work as a bootstrap/recovery path and don't touch this
 table at all — see `src/lib/auth.ts`.
+
+**Revocation is instant, not "whenever the token expires."** A NextAuth JWT
+session is otherwise stateless — normally, suspending or deleting a user
+wouldn't take effect until their token naturally expired. Instead,
+`requireApiAuth()` (`src/lib/apiAuth.ts`) re-checks this table's live
+status on *every single API request* for a real account (`UPDATE users SET
+last_active_at = now() WHERE id = ... RETURNING *`, one round trip) — if an
+admin suspended, rejected, or deleted the account, or changed its role,
+that's what the user hits on their very next click, and it's also what
+stamps `last_active_at` for the Admin panel's "Last Active" column.
+Deleting a user (Admin panel → Delete) removes the row entirely but leaves
+their Applications/Funds/Investors data untouched (see above) — it becomes
+admin-only visible, not lost.
 
 ## `activity_log` — Milestone 2, audit trail
 

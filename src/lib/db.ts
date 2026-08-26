@@ -230,9 +230,12 @@ async function runSchema(): Promise<void> {
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT '',
       approved_at TEXT NOT NULL DEFAULT '',
-      approved_by TEXT NOT NULL DEFAULT ''
+      approved_by TEXT NOT NULL DEFAULT '',
+      last_active_at TEXT NOT NULL DEFAULT ''
     );
   `;
+  // Migration for a table created before last_active_at existed.
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TEXT NOT NULL DEFAULT '';`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS activity_log (

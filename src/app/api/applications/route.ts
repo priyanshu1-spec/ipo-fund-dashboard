@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
+import { isAuthedContext, requireApiAuth, scopeFor } from "@/lib/apiAuth";
 import { createApplication, listApplications } from "@/lib/repositories/applications";
 import { recordActivity } from "@/lib/repositories/activityLog";
 
@@ -30,7 +30,7 @@ const applicationInputSchema = z.object({
 export async function GET() {
   const auth = await requireApiAuth("viewer");
   if (!isAuthedContext(auth)) return auth;
-  const applications = await listApplications();
+  const applications = await listApplications(scopeFor(auth));
   return NextResponse.json({ applications });
 }
 
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const application = await createApplication(parsed.data, auth.actor);
+  const application = await createApplication(parsed.data, auth.actor, auth.userId);
   await recordActivity({
     userId: auth.userId,
     userName: auth.actor,

@@ -2,8 +2,6 @@ import { ensureSchema, sql } from "@/lib/db";
 import { generateId, num } from "@/lib/id";
 import type { ApplicationRow } from "@/types";
 
-const OWNER_ID = "admin";
-
 function toApplication(r: Record<string, unknown>): ApplicationRow {
   return {
     id: String(r.id ?? ""),
@@ -33,21 +31,29 @@ function toApplication(r: Record<string, unknown>): ApplicationRow {
   };
 }
 
-export async function listApplications(): Promise<ApplicationRow[]> {
+/** ownerId: string | null — null means admin (unscoped, sees every row). See investors.ts for the full rationale. */
+export async function listApplications(ownerId: string | null): Promise<ApplicationRow[]> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM applications WHERE owner_id = ${OWNER_ID} ORDER BY created_at DESC NULLS LAST`;
+  const { rows } =
+    ownerId == null
+      ? await sql`SELECT * FROM applications ORDER BY created_at DESC NULLS LAST`
+      : await sql`SELECT * FROM applications WHERE owner_id = ${ownerId} ORDER BY created_at DESC NULLS LAST`;
   return rows.map(toApplication);
 }
 
-export async function getApplication(id: string): Promise<ApplicationRow | undefined> {
+export async function getApplication(id: string, ownerId: string | null): Promise<ApplicationRow | undefined> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM applications WHERE id = ${id}`;
+  const { rows } =
+    ownerId == null
+      ? await sql`SELECT * FROM applications WHERE id = ${id}`
+      : await sql`SELECT * FROM applications WHERE id = ${id} AND owner_id = ${ownerId}`;
   return rows[0] ? toApplication(rows[0]) : undefined;
 }
 
 export async function createApplication(
   input: Partial<ApplicationRow>,
-  createdBy: string
+  createdBy: string,
+  ownerId: string
 ): Promise<ApplicationRow> {
   await ensureSchema();
   const now = new Date().toISOString();
@@ -84,7 +90,7 @@ export async function createApplication(
       lots_allotted, amount_allotted, refund_amount, refund_status, refund_date, sell_date,
       sell_price, created_by, created_at, updated_at, notes
     ) VALUES (
-      ${app.id}, ${OWNER_ID}, ${app.ipoId}, ${app.ipoName}, ${app.appliedInNameOf}, ${app.investorId},
+      ${app.id}, ${ownerId}, ${app.ipoId}, ${app.ipoName}, ${app.appliedInNameOf}, ${app.investorId},
       ${app.panMasked}, ${app.applicationNumber}, ${app.upiId}, ${app.category}, ${app.lotsApplied},
       ${app.amountBlocked}, ${app.paymentMode}, ${app.allotmentStatus}, ${app.lotsAllotted},
       ${app.amountAllotted}, ${app.refundAmount}, ${app.refundStatus}, ${app.refundDate},
@@ -96,10 +102,11 @@ export async function createApplication(
 
 export async function updateApplication(
   id: string,
-  patch: Partial<ApplicationRow>
+  patch: Partial<ApplicationRow>,
+  ownerId: string | null
 ): Promise<ApplicationRow> {
   await ensureSchema();
-  const existing = await getApplication(id);
+  const existing = await getApplication(id, ownerId);
   if (!existing) throw new Error(`Application ${id} not found`);
   const merged: ApplicationRow = { ...existing, ...patch, id, updatedAt: new Date().toISOString() };
   await sql`
@@ -119,7 +126,11 @@ export async function updateApplication(
   return merged;
 }
 
-export async function deleteApplication(id: string): Promise<void> {
+export async function deleteApplication(id: string, ownerId: string | null): Promise<void> {
   await ensureSchema();
-  await sql`DELETE FROM applications WHERE id = ${id}`;
+  if (ownerId == null) {
+    await sql`DELETE FROM applications WHERE id = ${id}`;
+  } else {
+    await sql`DELETE FROM applications WHERE id = ${id} AND owner_id = ${ownerId}`;
+  }
 }

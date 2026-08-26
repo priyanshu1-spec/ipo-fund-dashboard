@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
+import { isAuthedContext, requireApiAuth, scopeFor } from "@/lib/apiAuth";
 import { createFundAllocation, listFundAllocations } from "@/lib/repositories/funds";
 import { recordActivity } from "@/lib/repositories/activityLog";
 
@@ -23,7 +23,7 @@ const fundInputSchema = z.object({
 export async function GET() {
   const auth = await requireApiAuth("viewer");
   if (!isAuthedContext(auth)) return auth;
-  const funds = await listFundAllocations();
+  const funds = await listFundAllocations(scopeFor(auth));
   return NextResponse.json({ funds });
 }
 
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const fund = await createFundAllocation(parsed.data);
+  const fund = await createFundAllocation(parsed.data, auth.userId);
   await recordActivity({
     userId: auth.userId,
     userName: auth.actor,

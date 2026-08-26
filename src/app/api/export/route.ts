@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
+import { isAuthedContext, requireApiAuth, scopeFor } from "@/lib/apiAuth";
 import { listIpos } from "@/lib/repositories/ipos";
 import { listApplications } from "@/lib/repositories/applications";
 import { listFundAllocations } from "@/lib/repositories/funds";
@@ -12,11 +12,12 @@ export async function GET() {
   const auth = await requireApiAuth("viewer");
   if (!isAuthedContext(auth)) return auth;
 
+  const scope = scopeFor(auth);
   const [ipos, applications, funds, investors] = await Promise.all([
     listIpos(),
-    listApplications(),
-    listFundAllocations(),
-    listInvestors(),
+    listApplications(scope),
+    listFundAllocations(scope),
+    listInvestors(scope),
   ]);
   const ledgers = buildInvestorLedgers(investors, applications, funds, ipos);
 

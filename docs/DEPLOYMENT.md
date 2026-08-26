@@ -52,6 +52,14 @@ from the **Admin** page in the sidebar, which only shows for the admin
 role. The shared password(s) above keep working alongside real accounts —
 that's what gets you in to approve the very first one.
 
+**Data isolation, stated plainly**: each `viewer`/`editor` account only
+ever sees its own Applications/Funds/Investors entries — not a shared team
+view. Only `admin` sees everyone's. If you already had data in this app
+before setting up real accounts, that data is tagged `owner_id = 'admin'`
+and stays fully visible/editable to any admin, but won't show up for a
+newly-approved editor/viewer until it's reassigned or they re-enter it
+under their own account.
+
 ## 5. Automated IPO data fetching
 
 **How it works**: a server-side provider (currently NSE's public
