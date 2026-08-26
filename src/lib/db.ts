@@ -85,7 +85,7 @@ async function runSchema(): Promise<void> {
       price_band_min NUMERIC NOT NULL DEFAULT 0,
       price_band_max NUMERIC NOT NULL DEFAULT 0,
       face_value NUMERIC,
-      lot_size NUMERIC NOT NULL DEFAULT 0,
+      lot_size NUMERIC,
       min_investment NUMERIC,
       issue_size TEXT NOT NULL DEFAULT '',
       fresh_issue_size TEXT NOT NULL DEFAULT '',
@@ -111,6 +111,14 @@ async function runSchema(): Promise<void> {
       notes TEXT NOT NULL DEFAULT ''
     );
   `;
+
+  // Migration: lot_size used to be NOT NULL DEFAULT 0, which silently turned
+  // "NSE didn't publish this yet" into a fabricated 0. A table created before
+  // this change still carries that constraint even though CREATE TABLE IF
+  // NOT EXISTS above won't touch it — drop it explicitly. No-op (and safe to
+  // run every cold start) once already applied.
+  await sql`ALTER TABLE ipos ALTER COLUMN lot_size DROP NOT NULL;`;
+  await sql`ALTER TABLE ipos ALTER COLUMN lot_size DROP DEFAULT;`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS ipo_gmp_history (
