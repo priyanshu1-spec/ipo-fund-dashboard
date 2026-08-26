@@ -19,6 +19,7 @@ import {
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
+import { ipopremiumProvider } from "@/lib/ipoProviders/ipopremiumProvider";
 import { validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
@@ -27,24 +28,25 @@ import type { IpoDataSource, IpoRow } from "@/types";
 // first; a later provider's row for the "same" IPO is matched onto it by
 // fuzzy name (see resolveIpoId) regardless of which ran first.
 //
-// ONLY nseProvider is registered right now — both secondary scrapers have
-// been tried and pulled after real, confirmed failures, not speculation:
+// chittorgarhProvider.ts and ipowatchProvider.ts are NOT registered —
+// both were tried and pulled after real, confirmed failures:
+// - chittorgarh: its report pages return zero <table> elements in the
+//   raw HTML — rendered client-side by JavaScript a plain fetch never
+//   executes. Not fixable without a headless browser.
+// - ipowatch: its homepage-crawl-to-any-IPO-looking-link approach
+//   inserted a garbage row ("₹[.] Cr.", a template placeholder string
+//   mistaken for a company name from a mismatched table) and contributed
+//   to a real "Refresh IPO Data" click hanging for minutes.
 //
-// - chittorgarhProvider.ts: its report pages return zero <table> elements
-//   in the raw HTML — rendered client-side by JavaScript a plain fetch
-//   never executes. Not fixable without a headless browser.
-// - ipowatchProvider.ts: its homepage-crawl-and-guess approach both (a)
-//   contributed to a real-world refresh taking ~5 minutes before a 504,
-//   and (b) inserted a garbage row ("₹[.] Cr.", a template placeholder
-//   text it mistook for a company name from a mismatched table). For a
-//   dashboard meant for other people to rely on, wrong data is worse than
-//   missing data — pulled until it can be scoped to verified, specific
-//   pages instead of a broad "any IPO-looking link" crawl.
+// ipopremiumProvider.ts, added after, is deliberately narrower than
+// ipowatch's approach: it only ever fetches the fixed homepage URL, never
+// follows a link to a guessed subpage — see its file header for why.
 //
-// Both files are left in the codebase for a future, verified fix. Lot
-// size / GMP / dates NSE doesn't publish stay fillable via manual
-// add/edit — always available, per this app's original design.
-const PROVIDERS: IpoDataProvider[] = [nseProvider];
+// All three files are left in the codebase; chittorgarh/ipowatch are a
+// starting point for a future, properly-scoped fix. Whatever no active
+// provider publishes stays fillable via manual add/edit — always
+// available, per this app's original design.
+const PROVIDERS: IpoDataProvider[] = [nseProvider, ipopremiumProvider];
 
 /**
  * Hard ceiling on a single provider's fetch(), independent of whatever
@@ -137,7 +139,7 @@ export interface SyncSummary {
   totalUpdated: number;
 }
 
-const SOURCE_PRIORITY = ["NSE", "IPOWatch", "Chittorgarh", "Manual"];
+const SOURCE_PRIORITY = ["NSE", "IPOPremium", "IPOWatch", "Chittorgarh", "Manual"];
 
 /** Adds providerLabel to whatever sources already contributed to this row (order-independent, de-duplicated), rendered in a stable order per SOURCE_PRIORITY — any label not listed there (a new provider added without updating this list) still appears, just after the known ones, rather than silently vanishing. */
 function combineDataSource(existing: IpoDataSource | undefined, providerLabel: string): IpoDataSource {
@@ -257,52 +259,80 @@ async function logFetch(summary: ProviderRunSummary, startedAt: string, complete
 /** Runs every registered provider once, applying results to the database. Never throws — a provider failure is captured per-provider so the others still run. */
 export async function runIpoSync(): Promise<SyncSummary> {
   const startedAt = new Date().toISOString();
-  const providerSummaries: ProviderRunSummary[] = [];
 
-  for (const provider of PROVIDERS) {
-    const providerStart = new Date().toISOString();
+  // Fetch stage: every provider runs concurrently, each independently
+  // hard-capped by withHardTimeout — one slow or hung provider never
+  // delays the others, and this whole stage takes as long as the slowest
+  // provider rather than the sum of all of them (what made a two-provider
+  // sequential run risk exceeding the route's maxDuration).
+  const fetchOutcomes = await Promise.all(
+    PROVIDERS.map(async (provider) => {
+      const providerStart = new Date().toISOString();
+      try {
+        const result = await withHardTimeout(
+          provider.fetch(),
+          PROVIDER_FETCH_TIMEOUT_MS,
+          `${provider.displayName} fetch`
+        );
+        return { provider, providerStart, result, fetchError: "" };
+      } catch (err) {
+        return {
+          provider,
+          providerStart,
+          result: null,
+          fetchError: err instanceof Error ? err.message : String(err),
+        };
+      }
+    })
+  );
+
+  // Write stage: sequential, in PROVIDERS order — preserves "NSE
+  // (official) discovers a company first" semantics that resolveIpoId's
+  // fuzzy name-matching relies on, and avoids two providers writing to
+  // possibly-overlapping rows concurrently.
+  const providerSummaries: ProviderRunSummary[] = [];
+  for (const { provider, providerStart, result, fetchError } of fetchOutcomes) {
     let inserted = 0;
     let updated = 0;
     let found = 0;
-    let error = "";
-    let success = true;
+    let error = fetchError;
+    let success = !fetchError;
 
-    try {
-      const result = await withHardTimeout(
-        provider.fetch(),
-        PROVIDER_FETCH_TIMEOUT_MS,
-        `${provider.displayName} fetch`
-      );
-      found = result.ipos.length;
+    if (result) {
+      try {
+        found = result.ipos.length;
 
-      // Schema-validate every row before it ever reaches the database —
-      // this is the boundary that protects Postgres from any provider's
-      // bug, not just whichever source happens to be active today. A row
-      // that fails (bad enum, close date before open date, a negative lot
-      // size, etc.) is dropped with a specific reason, never silently
-      // written malformed and never fabricated into something plausible.
-      const { valid, rejections } = validateNormalizedIpos(result.ipos);
-      for (const item of valid) {
-        const outcome = await applyNormalizedIpo(item, provider);
-        if (outcome === "inserted") inserted++;
-        if (outcome === "updated") updated++;
+        // Schema-validate every row before it ever reaches the database —
+        // this is the boundary that protects Postgres from any provider's
+        // bug, not just whichever source happens to be active today. A row
+        // that fails (bad enum, close date before open date, a negative
+        // lot size, etc.) is dropped with a specific reason, never
+        // silently written malformed and never fabricated into something
+        // plausible.
+        const { valid, rejections } = validateNormalizedIpos(result.ipos);
+        for (const item of valid) {
+          const outcome = await applyNormalizedIpo(item, provider);
+          if (outcome === "inserted") inserted++;
+          if (outcome === "updated") updated++;
+        }
+
+        const allWarnings = [
+          ...result.warnings,
+          ...rejections.map((r) => `Rejected "${r.name}": ${r.reason}`),
+        ];
+        if (allWarnings.length > 0 && (found === 0 || rejections.length > 0)) {
+          // Zero usable rows is not a hard failure (site may just have
+          // nothing new right now) unless there's also nothing else to
+          // show for it — still surface the warning as the "error" field
+          // for visibility. A validation rejection is always surfaced,
+          // even alongside other successful rows, since it points at a
+          // real data-quality issue.
+          error = allWarnings.join("; ");
+        }
+      } catch (err) {
+        success = false;
+        error = err instanceof Error ? err.message : String(err);
       }
-
-      const allWarnings = [
-        ...result.warnings,
-        ...rejections.map((r) => `Rejected "${r.name}": ${r.reason}`),
-      ];
-      if (allWarnings.length > 0 && (found === 0 || rejections.length > 0)) {
-        // Zero usable rows is not a hard failure (site may just have nothing
-        // new right now) unless there's also nothing else to show for it —
-        // still surface the warning as the "error" field for visibility.
-        // A validation rejection is always surfaced, even alongside other
-        // successful rows, since it points at a real data-quality issue.
-        error = allWarnings.join("; ");
-      }
-    } catch (err) {
-      success = false;
-      error = err instanceof Error ? err.message : String(err);
     }
 
     const providerCompleted = new Date().toISOString();

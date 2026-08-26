@@ -84,29 +84,30 @@ is inherently unofficial from every source that publishes it, always. See
 `docs/DEPLOYMENT.md` §5 for the Cron frequency limitation on Vercel's free
 tier.
 
-**NSE is currently the only active provider.** Two attempts at a second,
-non-official source to fill in what NSE doesn't publish (lot size,
-allotment/listing dates, GMP) were both tried and pulled after confirmed
-failures — not speculation:
+**Active providers: NSE + IPOPremium** (`src/lib/ipoProviders/nseProvider.ts`,
+`ipopremiumProvider.ts`). Two earlier attempts at a second source were tried
+and pulled after confirmed failures — not speculation:
 
 - `chittorgarhProvider.ts`: its report pages are rendered client-side by
   JavaScript, which a plain server-side fetch can never execute (confirmed:
   its raw HTML contains zero `<table>` elements).
-- `ipowatchProvider.ts`: its homepage-crawl-and-guess approach inserted a
-  garbage row (a template placeholder string mistaken for a company name)
-  and contributed to a real "Refresh IPO Data" click taking minutes before
-  timing out. For a dashboard meant for other people to rely on, wrong data
-  is worse than missing data.
+- `ipowatchProvider.ts`: its homepage-crawl-to-any-IPO-looking-link
+  approach inserted a garbage row (a template placeholder string mistaken
+  for a company name) and contributed to a real "Refresh IPO Data" click
+  taking minutes before timing out.
 
-Both files are left in the codebase as a starting point for a future
-attempt scoped to specific, human-verified pages rather than an open
-crawl — see the comment at the top of each. If re-enabled, a secondary
-provider's rows are fuzzy-matched onto the row NSE already created (never
-letting its own spelling of a company name overwrite NSE's), and every
-row's `SOURCE` badge shows exactly which provider(s) contributed. In the
-meantime, whatever NSE doesn't publish (lot size especially, for issues
-still "Upcoming") stays fillable via "Add IPO" / manual edit — always
-available regardless of what's automated.
+`ipopremiumProvider.ts` is deliberately narrower than ipowatch's crawl —
+it only ever fetches the fixed homepage URL, never follows a link to a
+guessed subpage, specifically to avoid repeating that failure mode. A
+secondary provider's rows are fuzzy-matched onto the row NSE already
+created (never letting its own spelling of a company name overwrite
+NSE's), and every row's `SOURCE` badge shows exactly which provider(s)
+contributed. Whatever no active provider publishes stays fillable via
+"Add IPO" / manual edit — always available regardless of what's automated;
+see `normalizedIpoSchema.ts` for the validation layer (rejects, among
+other things, any "name" that isn't a plausible company name — added
+after the ipowatch incident) that every provider's output passes through
+before it ever reaches the database, whichever provider is active.
 
 **Refresh reliability**: `runIpoSync()` (`src/lib/ipoSync.ts`) wraps every
 provider's `fetch()` in a hard 35-second timeout independent of that
@@ -156,7 +157,7 @@ src/
   lib/
     db.ts                 # Postgres client + schema
     repositories/            # typed CRUD + history per entity, incl. users + activityLog
-    ipoProviders/              # pluggable data source interface — NSE active; Chittorgarh/IPOWatch disabled, see README
+    ipoProviders/              # pluggable data source interface — NSE + IPOPremium active; Chittorgarh/IPOWatch disabled, see README
     ipoSync.ts                   # orchestrator: fetch -> validate -> normalize -> store -> log
     auth.ts, apiAuth.ts             # NextAuth (DB users + legacy shared password) + API guard
     calculations.ts                   # dashboard/ledger/profit math
