@@ -44,6 +44,7 @@ interface RefreshResult {
   ok: boolean;
   totalInserted: number;
   totalUpdated: number;
+  cleanedUp?: string[];
   providers: { provider: string; success: boolean; recordsFound: number; error: string }[];
   error?: string;
 }
@@ -179,6 +180,12 @@ export default function IposPage() {
               <p className="font-semibold text-slate-800 dark:text-slate-100">
                 Refresh completed: {refreshResult.totalInserted} added, {refreshResult.totalUpdated} updated.
               </p>
+              {refreshResult.cleanedUp && refreshResult.cleanedUp.length > 0 && (
+                <p className="mt-1 text-emerald-600 dark:text-emerald-400">
+                  Removed {refreshResult.cleanedUp.length} invalid entr
+                  {refreshResult.cleanedUp.length === 1 ? "y" : "ies"}: {refreshResult.cleanedUp.join(", ")}
+                </p>
+              )}
               <ul className="mt-1 space-y-0.5">
                 {refreshResult.providers.map((p) => (
                   <li key={p.provider} className="flex items-center gap-1.5">
@@ -188,11 +195,15 @@ export default function IposPage() {
                       <ShieldAlert size={13} className="text-red-600" />
                     )}
                     <span>
-                      {p.provider}: {p.recordsFound} found{p.error ? ` — ${p.error}` : ""}
+                      {p.provider}: {p.recordsFound} found
+                      {!p.success && " — failed"}
                     </span>
                   </li>
                 ))}
               </ul>
+              <p className="mt-1 text-xs text-slate-400">
+                Full details (including per-row diagnostics) are in Settings → Fetch Logs.
+              </p>
               {refreshResult.providers.length === 0 && (
                 <p className="mt-1 text-slate-400">No providers ran (unexpected — check server logs).</p>
               )}

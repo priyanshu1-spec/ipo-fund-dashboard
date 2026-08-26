@@ -13,14 +13,16 @@ import {
   appendGmpHistory,
   appendSubscriptionHistory,
   createIpo,
+  deleteIposByIds,
   generateIpoId,
   getIpo,
+  listAllIpoIdsAndNames,
   listIpoIdsAndNames,
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
 import { ipopremiumProvider } from "@/lib/ipoProviders/ipopremiumProvider";
-import { validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
+import { isPlausibleIpoName, validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
 
@@ -151,6 +153,25 @@ export interface SyncSummary {
   providers: ProviderRunSummary[];
   totalInserted: number;
   totalUpdated: number;
+  /** Names of any rows removed by cleanupImplausibleIpoNames() this run — e.g. leftover garbage from a scraper bug that predates the validation now blocking new occurrences. Empty on almost every run. */
+  cleanedUp: string[];
+}
+
+/**
+ * Sweeps for and deletes any IPO row whose name fails isPlausibleIpoName —
+ * the same check normalizedIpoSchema.ts now applies to every new row, so
+ * this only ever catches rows written before that validation existed (e.g.
+ * "₹[.] Cr.", a template placeholder a scraper once mistook for a company
+ * name). Runs once per sync; cheap (2 round trips total: one SELECT id+name
+ * for every row, one batched DELETE for whatever matched) and a no-op once
+ * there's nothing left to clean.
+ */
+async function cleanupImplausibleIpoNames(): Promise<string[]> {
+  const all = await listAllIpoIdsAndNames();
+  const bad = all.filter((r) => !isPlausibleIpoName(r.name));
+  if (bad.length === 0) return [];
+  await deleteIposByIds(bad.map((r) => r.id));
+  return bad.map((r) => r.name);
 }
 
 const SOURCE_PRIORITY = ["NSE", "IPOPremium", "IPOWatch", "Chittorgarh", "Manual"];
@@ -273,6 +294,12 @@ async function logFetch(summary: ProviderRunSummary, startedAt: string, complete
 export async function runIpoSync(): Promise<SyncSummary> {
   const startedAt = new Date().toISOString();
 
+  // Sweep for leftover implausible-named rows first (e.g. old scraper
+  // garbage from before validation existed) — cheap, and means a redeploy
+  // that fixes a bad provider also cleans up after it automatically,
+  // rather than requiring someone to find and click a trash icon.
+  const cleanedUp = await cleanupImplausibleIpoNames();
+
   // Fetch stage: every provider runs concurrently, each independently
   // hard-capped by withHardTimeout — one slow or hung provider never
   // delays the others, and this whole stage takes as long as the slowest
@@ -387,5 +414,6 @@ export async function runIpoSync(): Promise<SyncSummary> {
     providers: providerSummaries,
     totalInserted: providerSummaries.reduce((s, p) => s + p.recordsInserted, 0),
     totalUpdated: providerSummaries.reduce((s, p) => s + p.recordsUpdated, 0),
+    cleanedUp,
   };
 }

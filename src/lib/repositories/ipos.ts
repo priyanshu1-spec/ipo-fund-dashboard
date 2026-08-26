@@ -84,6 +84,20 @@ export async function listIpoIdsAndNames(type: IpoType): Promise<{ id: string; n
   return rows.map((r) => ({ id: String(r.id), name: String(r.name) }));
 }
 
+/** Same as listIpoIdsAndNames but across every type — used for the implausible-name cleanup sweep (see ipoSync.ts), which isn't type-scoped. */
+export async function listAllIpoIdsAndNames(): Promise<{ id: string; name: string }[]> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT id, name FROM ipos`;
+  return rows.map((r) => ({ id: String(r.id), name: String(r.name) }));
+}
+
+/** Deletes exactly the given ids in one statement — used for the implausible-name cleanup sweep, so removing N bad rows costs one round trip, not N. */
+export async function deleteIposByIds(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await ensureSchema();
+  await query(`DELETE FROM ipos WHERE id = ANY($1)`, [ids]);
+}
+
 const IPO_COLUMNS = [
   "id", "name", "symbol", "type", "issue_type", "open_date", "close_date", "allotment_date",
   "refund_date", "listing_date", "price_band_min", "price_band_max", "face_value", "lot_size",

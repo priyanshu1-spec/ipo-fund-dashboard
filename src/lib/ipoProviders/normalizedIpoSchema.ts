@@ -24,17 +24,29 @@ const ipoTypeSchema = z.enum(["Mainboard", "SME"]);
 const ipoStatusSchema = z.enum(["Upcoming", "Open", "Closed", "Allotment Awaited", "Allotted", "Listed"]);
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO yyyy-MM-dd date");
 
-// A real company name always starts with a letter or digit and never
-// contains a currency symbol or a template-placeholder bracket. Added
-// after a scraper mismatched a table and inserted "₹[.] Cr." (an unfilled
-// template string, not a company) as an IPO name — the length check alone
-// didn't catch it, since it's technically >= 2 characters.
+/**
+ * A real company name always starts with a letter or digit and never
+ * contains a currency symbol or a template-placeholder bracket. Added
+ * after a scraper mismatched a table and inserted "₹[.] Cr." (an unfilled
+ * template string, not a company) as an IPO name — the length check alone
+ * didn't catch it, since it's technically >= 2 characters. Exported as a
+ * plain function (not just baked into the Zod schema below) so the same
+ * rule can also retroactively clean up rows already written before this
+ * check existed — see cleanupImplausibleIpoNames() in ipoSync.ts.
+ */
+export function isPlausibleIpoName(name: string): boolean {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) return false;
+  if (!/^[A-Za-z0-9]/.test(trimmed)) return false;
+  if (/[₹\[\]{}]/.test(trimmed)) return false;
+  return true;
+}
+
 const plausibleNameSchema = z
   .string()
   .trim()
   .min(2, "name must be at least 2 characters")
-  .refine((s) => /^[A-Za-z0-9]/.test(s), "must start with a letter or digit")
-  .refine((s) => !/[₹\[\]{}]/.test(s), "must not contain a currency symbol or template bracket");
+  .refine(isPlausibleIpoName, "must look like a plausible company name (starts with a letter/digit, no currency symbol or template bracket)");
 
 export const normalizedIpoSchema = z
   .object({
