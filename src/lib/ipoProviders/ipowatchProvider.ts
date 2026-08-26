@@ -1,25 +1,31 @@
 // ============================================================================
-// IPOWatch provider — a secondary, explicitly NON-official source
-// (isOfficial: false) that fills in what NSE's endpoint usually doesn't
-// publish before/around an issue opening: lot size, allotment/listing
-// dates, and (like every GMP source, always) grey market premium. Reached
-// via plain public pages — no login, CAPTCHA, or Cloudflare bypass
-// involved; if that ever changes, this provider is meant to fail closed
-// (return zero rows + a warning), same contract as nseProvider.
+// IPOWatch provider — DISABLED, not registered in ipoSync.ts's PROVIDERS
+// list. The homepage-crawl-and-guess approach (see below) was tried in
+// production and confirmed to cause two real problems, not hypothetical
+// ones: it inserted a garbage row ("₹[.] Cr.", a template placeholder
+// string it mistook for a company name from a mismatched table), and it
+// contributed to a real "Refresh IPO Data" click taking ~5 minutes before
+// timing out. Broadly crawling "any link that looks IPO-related" and
+// trusting "any table with a name-like column" is inherently too loose —
+// it can latch onto the wrong table on a page that wasn't the intended
+// target at all. Left in the codebase as a starting point for a future
+// attempt scoped to specific, verified page(s) instead of an open crawl.
 //
-// IMPORTANT CAVEAT (read before debugging a zero-rows warning): this
-// sandbox's network policy blocks ipowatch.in, so its exact page
-// structure and URLs could not be verified before shipping — chosen after
-// chittorgarh.com turned out to be JavaScript-rendered (unfixable via a
-// plain fetch). Rather than hardcode guessed report-page URLs a second
-// time, this crawls outward from the homepage: fetch it, try to read a
-// table directly off it, and separately follow any links whose href/text
-// look IPO-related (see findCandidateLinks in htmlTableUtils.ts) to a
-// bounded set of subpages, extracting a table from each. If ipowatch.in's
-// real layout doesn't match, the fetch-log warning (Settings page) lists
-// every candidate URL this actually found and tried, plus the raw
-// headers of any table it saw on each — enough to fix the column aliases
-// below in one round trip instead of guessing again.
+// Original design intent, preserved for that future attempt: a secondary,
+// explicitly NON-official source (isOfficial: false) filling in what
+// NSE's endpoint doesn't publish — lot size, allotment/listing dates, GMP
+// — reached via plain public pages, no login/CAPTCHA/Cloudflare bypass.
+// This sandbox's network policy blocks ipowatch.in, so its exact page
+// structure and URLs were never verified before the crawl approach was
+// tried — chosen after chittorgarh.com turned out to be JavaScript-
+// rendered (unfixable via a plain fetch). Rather than hardcode guessed
+// report-page URLs a second time, this crawled outward from the
+// homepage: fetch it, try to read a table directly off it, and follow
+// any links whose href/text look IPO-related (see findCandidateLinks in
+// htmlTableUtils.ts) to a bounded set of subpages. That's the part that
+// needs to be replaced with specific, human-verified URLs before this
+// is re-enabled — not the parsing logic itself, which is unchanged from
+// chittorgarhProvider.ts's approach and worked correctly there.
 //
 // Never merges its own company-name spelling over an existing row's name —
 // see resolveIpoId()/applyNormalizedIpo() in ipoSync.ts, which fuzzy-matches

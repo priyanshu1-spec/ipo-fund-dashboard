@@ -24,9 +24,21 @@ const ipoTypeSchema = z.enum(["Mainboard", "SME"]);
 const ipoStatusSchema = z.enum(["Upcoming", "Open", "Closed", "Allotment Awaited", "Allotted", "Listed"]);
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO yyyy-MM-dd date");
 
+// A real company name always starts with a letter or digit and never
+// contains a currency symbol or a template-placeholder bracket. Added
+// after a scraper mismatched a table and inserted "₹[.] Cr." (an unfilled
+// template string, not a company) as an IPO name — the length check alone
+// didn't catch it, since it's technically >= 2 characters.
+const plausibleNameSchema = z
+  .string()
+  .trim()
+  .min(2, "name must be at least 2 characters")
+  .refine((s) => /^[A-Za-z0-9]/.test(s), "must start with a letter or digit")
+  .refine((s) => !/[₹\[\]{}]/.test(s), "must not contain a currency symbol or template bracket");
+
 export const normalizedIpoSchema = z
   .object({
-    name: z.string().trim().min(2, "name must be at least 2 characters"),
+    name: plausibleNameSchema,
     symbol: z.string().optional(),
     type: ipoTypeSchema,
     issueType: z.string().optional(),

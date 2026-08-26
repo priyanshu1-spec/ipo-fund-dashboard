@@ -3,6 +3,16 @@ import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { runIpoSync } from "@/lib/ipoSync";
 
 /**
+ * Belt-and-suspenders alongside ipoSync.ts's own per-provider hard timeout
+ * (35s): guarantees Vercel itself kills this function well inside its
+ * platform ceiling rather than a hung upstream connection dragging the
+ * request out to minutes before some gateway eventually 504s it — that's
+ * what a user actually hit once. 45s comfortably covers one provider's
+ * 35s cap plus DB write time; raise if more providers run concurrently.
+ */
+export const maxDuration = 45;
+
+/**
  * "Refresh IPO Data" button — editor-only. The browser calls this; the
  * server does the actual fetching. The browser never talks to NSE/BSE
  * directly for this.

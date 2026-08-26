@@ -19,7 +19,6 @@ import {
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
-import { ipowatchProvider } from "@/lib/ipoProviders/ipowatchProvider";
 import { validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
@@ -28,16 +27,59 @@ import type { IpoDataSource, IpoRow } from "@/types";
 // first; a later provider's row for the "same" IPO is matched onto it by
 // fuzzy name (see resolveIpoId) regardless of which ran first.
 //
-// chittorgarhProvider.ts is NOT registered here: confirmed (not just
-// suspected) to return zero <table> elements in its raw HTML response —
-// its report pages are rendered client-side by JavaScript, which a plain
-// server-side fetch never executes. That's not a fixable selector/markup
-// problem without a headless browser (Puppeteer/Playwright), which is a
-// poor fit for a Vercel serverless function. Left in the codebase in case
-// a future source turns out to expose the same data via a real HTML
-// table or JSON endpoint, but it must stay out of PROVIDERS until then —
-// it was only adding latency and a permanent warning for zero rows.
-const PROVIDERS: IpoDataProvider[] = [nseProvider, ipowatchProvider];
+// ONLY nseProvider is registered right now — both secondary scrapers have
+// been tried and pulled after real, confirmed failures, not speculation:
+//
+// - chittorgarhProvider.ts: its report pages return zero <table> elements
+//   in the raw HTML — rendered client-side by JavaScript a plain fetch
+//   never executes. Not fixable without a headless browser.
+// - ipowatchProvider.ts: its homepage-crawl-and-guess approach both (a)
+//   contributed to a real-world refresh taking ~5 minutes before a 504,
+//   and (b) inserted a garbage row ("₹[.] Cr.", a template placeholder
+//   text it mistook for a company name from a mismatched table). For a
+//   dashboard meant for other people to rely on, wrong data is worse than
+//   missing data — pulled until it can be scoped to verified, specific
+//   pages instead of a broad "any IPO-looking link" crawl.
+//
+// Both files are left in the codebase for a future, verified fix. Lot
+// size / GMP / dates NSE doesn't publish stay fillable via manual
+// add/edit — always available, per this app's original design.
+const PROVIDERS: IpoDataProvider[] = [nseProvider];
+
+/**
+ * Hard ceiling on a single provider's fetch(), independent of whatever
+ * internal timeout that provider's own fetch calls use. This exists
+ * because relying solely on each fetch's own AbortSignal.timeout wasn't
+ * enough in practice — a hung connection under Vercel's runtime could
+ * still drag a "Refresh IPO Data" click out to minutes before the
+ * platform's own gateway gave up with a 504. Whichever happens first (the
+ * provider resolving, or this timing out) determines the outcome; a
+ * timeout here is treated as an ordinary provider failure (caught,
+ * logged, other providers unaffected), never a crash.
+ *
+ * Set above nseProvider's own legitimate worst case (~30s: a sequential
+ * 15s homepage/cookie fetch, then up to 15s more for the category fetch)
+ * so this doesn't start cutting off NSE — the one source that's actually
+ * been working — under ordinary slow-network conditions. See maxDuration
+ * in the route files that call runIpoSync() for the matching outer bound.
+ */
+const PROVIDER_FETCH_TIMEOUT_MS = 35_000;
+
+function withHardTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 /** Strip legal-entity noise so "XYZ Ltd" / "XYZ Limited" / "XYZ India Pvt Ltd" compare equal across sources that phrase the same company differently. */
 function normalizeCompanyName(name: string): string {
@@ -226,7 +268,11 @@ export async function runIpoSync(): Promise<SyncSummary> {
     let success = true;
 
     try {
-      const result = await provider.fetch();
+      const result = await withHardTimeout(
+        provider.fetch(),
+        PROVIDER_FETCH_TIMEOUT_MS,
+        `${provider.displayName} fetch`
+      );
       found = result.ipos.length;
 
       // Schema-validate every row before it ever reaches the database —

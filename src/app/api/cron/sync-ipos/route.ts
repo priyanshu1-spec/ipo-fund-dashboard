@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { runIpoSync } from "@/lib/ipoSync";
 
+/** See the matching comment in /api/admin/ipo/refresh/route.ts — same hard ceiling, same reason. */
+export const maxDuration = 45;
+
 function isAuthorizedCronRequest(req: Request): boolean {
   const expected = process.env.CRON_SECRET;
   if (!expected) return false;
