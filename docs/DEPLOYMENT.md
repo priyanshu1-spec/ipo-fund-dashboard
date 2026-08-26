@@ -33,6 +33,13 @@ Vercel deploys from a git repo.
    automatically the first time the app runs — no migration step.
 3. Prefer a different free provider (Neon, Supabase)? Set `DATABASE_URL`
    yourself instead — either works, see `.env.example`.
+   - **Using Supabase**: use the **Connection Pooler** string (Project →
+     Connect → "Transaction" / "Session" pooler, port `6543` or `5432` on a
+     `*.pooler.supabase.com` host), not the "Direct connection" string
+     (`db.<ref>.supabase.co`). The direct host frequently fails to resolve
+     from serverless platforms like Vercel — `getaddrinfo ENOTFOUND
+     db.<ref>.supabase.co` at deploy/runtime is that exact issue. The pooler
+     host is built for this and resolves fine.
 
 ## 4. Sign in
 
