@@ -1,40 +1,28 @@
 // ============================================================================
-// Chittorgarh provider — a secondary, explicitly NON-official source
-// (isOfficial: false) that fills in what NSE's endpoint usually doesn't
-// publish before/around an issue opening: lot size, allotment/listing
-// dates, and (like every GMP source, always) grey market premium. Reached
-// via plain public report pages — no login, CAPTCHA, or Cloudflare bypass
-// involved; if that ever changes, this provider is meant to fail closed
-// (return zero rows + a warning), same contract as nseProvider.
+// Chittorgarh provider — DISABLED, not registered in ipoSync.ts's PROVIDERS
+// list. Confirmed (not just suspected) that chittorgarh.com's report pages
+// return zero <table> elements in their raw HTML — the data is rendered
+// client-side by JavaScript a plain server-side fetch never executes. Not a
+// fixable selector/markup problem without a headless browser (Puppeteer/
+// Playwright), which is a poor fit for a Vercel serverless function.
 //
-// IMPORTANT CAVEAT (read before debugging a zero-rows warning): this file
-// was written from general knowledge of chittorgarh.com's report-page
-// layout, not from a live fetch — this sandbox's network policy blocks
-// chittorgarh.com, so the exact table markup could not be verified before
-// shipping. Parsing is deliberately header-text-driven (matches column
-// headers by known aliases, not brittle CSS class names) specifically to
-// tolerate that uncertainty. If chittorgarh.com has changed its markup, the
-// realistic failure mode is "0 rows, 1 warning", not wrong/fabricated data
-// — check the fetch-log warning first (Settings page) if this comes back
-// empty after a real deploy, then adjust REPORT_URLS/column aliases below
-// against the actual page.
-//
-// Never merges its own company-name spelling over an existing row's name —
-// see resolveIpoId()/applyNormalizedIpo() in ipoSync.ts, which fuzzy-matches
-// this provider's rows onto whatever NSE already created and keeps NSE's
-// spelling. GMP from here is still always unofficial, same as any source.
+// Left in place in case chittorgarh.com (or a fork of this file pointed at
+// a different source) ever exposes the same fields via a real HTML table or
+// JSON endpoint — see htmlTableUtils.ts for the shared, header-text-driven
+// parsing helpers this and ipowatchProvider.ts both use.
 // ============================================================================
 
-import * as cheerio from "cheerio";
+import {
+  extractTables,
+  fetchPage,
+  normalizeCompanyName,
+  parseDate,
+  parseNum,
+  parsePriceBand,
+  type TableRowData,
+} from "./htmlTableUtils";
 import type { IpoDataProvider, NormalizedIpo, ProviderFetchResult } from "./types";
 import type { IpoType } from "@/types";
-
-const BROWSER_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-};
 
 const REPORT_URLS = {
   mainboard: "https://www.chittorgarh.com/report/mainboard-ipo-list-in-india-bse-nse/83/",
@@ -42,10 +30,6 @@ const REPORT_URLS = {
   gmp: "https://www.chittorgarh.com/report/latest-ipo-gmp-grey-market-premium/23/",
 };
 
-// Column-header aliases, matched against a lowercased/punctuation-stripped
-// version of each <th>/<td> in a table's header row. Deliberately loose
-// (substring match) so small wording drift ("Open" vs "Open Date") still
-// resolves, without guessing at a value no header actually names.
 const COLUMN_ALIASES: Record<string, string[]> = {
   name: ["iponame", "companyname", "nameofissue", "issuername", "ipo"],
   open: ["open"],
@@ -57,129 +41,6 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   issueSize: ["issuesize", "iposize"],
   gmp: ["gmp", "greymarketpremium"],
 };
-
-function normalizeHeader(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
-function normalizeCompanyName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\b(limited|ltd|india|pvt|private|inc)\b\.?/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .trim();
-}
-
-function parseDate(text: string): string | undefined {
-  const cleaned = text.trim();
-  if (!cleaned || cleaned === "-" || /^n\.?a\.?$/i.test(cleaned)) return undefined;
-  const direct = new Date(cleaned);
-  if (!isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
-  // "28-Aug-2026" / "28 Aug 2026" style, which Date() parses inconsistently across engines.
-  const match = cleaned.match(/(\d{1,2})[-\s](\w{3,9})[-\s](\d{4})/);
-  if (match) {
-    const retry = new Date(`${match[2]} ${match[1]}, ${match[3]}`);
-    if (!isNaN(retry.getTime())) return retry.toISOString().slice(0, 10);
-  }
-  return undefined;
-}
-
-function parseNum(text: string): number | undefined {
-  const match = text.replace(/,/g, "").match(/-?\d+(\.\d+)?/);
-  return match ? parseFloat(match[0]) : undefined;
-}
-
-function parsePriceBand(text: string): { min?: number; max?: number } {
-  const nums = (text.match(/[\d,]+(\.\d+)?/g) ?? []).map((n) => parseFloat(n.replace(/,/g, "")));
-  if (nums.length === 0) return {};
-  if (nums.length === 1) return { min: nums[0], max: nums[0] };
-  return { min: Math.min(...nums), max: Math.max(...nums) };
-}
-
-interface TableRowData {
-  [column: string]: string;
-}
-
-interface ExtractResult {
-  tables: TableRowData[][];
-  /**
-   * Populated only when zero tables matched, specifically so a failure is
-   * diagnosable from the fetch-log warning alone (Settings page) without
-   * needing live access to chittorgarh.com to see what actually changed —
-   * this sandbox can't reach it. Each entry is one <table>'s raw header
-   * cell text, in DOM order, so a real column layout can be read directly
-   * off the next failure instead of guessed at again.
-   */
-  diagnostics?: string[];
-}
-
-/** Scans every <table> on the page; for each one whose header row has a recognizable "name" column, yields its body rows as {columnKey: cellText} maps. Tables without a name column (nav, unrelated widgets) are silently skipped — not every table on a report page is the data table. */
-function extractTables($: cheerio.CheerioAPI): ExtractResult {
-  const tables: TableRowData[][] = [];
-  const allHeaderSets: string[] = [];
-
-  $("table").each((_, table) => {
-    const $table = $(table);
-    const rawHeaderCells = $table
-      .find("tr")
-      .first()
-      .find("th, td")
-      .map((__, cell) => $(cell).text().trim())
-      .get();
-    if (rawHeaderCells.length === 0) return;
-    allHeaderSets.push(rawHeaderCells.join(" | "));
-
-    const headerCells = rawHeaderCells.map(normalizeHeader);
-    const columnKeyByIndex: (string | undefined)[] = headerCells.map((header) => {
-      for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
-        if (aliases.some((alias) => header.includes(alias))) return key;
-      }
-      return undefined;
-    });
-    if (!columnKeyByIndex.includes("name")) return;
-
-    const rows: TableRowData[] = [];
-    $table
-      .find("tr")
-      .slice(1)
-      .each((__, tr) => {
-        const cells = $(tr)
-          .find("td")
-          .map((___, cell) => $(cell).text().trim())
-          .get();
-        if (cells.length === 0) return;
-        const row: TableRowData = {};
-        cells.forEach((text, i) => {
-          const key = columnKeyByIndex[i];
-          if (key) row[key] = text;
-        });
-        if (row.name) rows.push(row);
-      });
-    if (rows.length > 0) tables.push(rows);
-  });
-
-  if (tables.length > 0) return { tables };
-  return {
-    tables,
-    diagnostics:
-      allHeaderSets.length > 0
-        ? allHeaderSets.slice(0, 5)
-        : ["No <table> elements found on the page at all — content may be JavaScript-rendered."],
-  };
-}
-
-type PageResult = { ok: true; $: cheerio.CheerioAPI } | { ok: false; warning: string };
-
-async function fetchPage(url: string): Promise<PageResult> {
-  try {
-    const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) return { ok: false, warning: `HTTP ${res.status} fetching ${url}` };
-    const html = await res.text();
-    return { ok: true, $: cheerio.load(html) };
-  } catch (err) {
-    return { ok: false, warning: `Failed to fetch ${url}: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
 
 function rowsToNormalized(rows: TableRowData[], type: IpoType, sourceUrl: string): NormalizedIpo[] {
   const out: NormalizedIpo[] = [];
@@ -232,7 +93,7 @@ export const chittorgarhProvider: IpoDataProvider = {
         warnings.push(page.warning);
         continue;
       }
-      const { tables, diagnostics } = extractTables(page.$);
+      const { tables, diagnostics } = extractTables(page.$, COLUMN_ALIASES);
       if (tables.length === 0) {
         warnings.push(
           `No recognizable data table found on ${url}. Tables seen: ${JSON.stringify(diagnostics)}`
@@ -251,7 +112,7 @@ export const chittorgarhProvider: IpoDataProvider = {
     if (!gmpPage.ok) {
       warnings.push(gmpPage.warning);
     } else {
-      const { tables, diagnostics } = extractTables(gmpPage.$);
+      const { tables, diagnostics } = extractTables(gmpPage.$, COLUMN_ALIASES);
       if (tables.length === 0) {
         warnings.push(
           `No recognizable data table found on ${REPORT_URLS.gmp}. Tables seen: ${JSON.stringify(diagnostics)}`

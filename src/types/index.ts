@@ -45,15 +45,16 @@ export type IpoStatus =
   | "Allotted"
   | "Listed";
 
-/** Who last supplied the core facts for this IPO row — NOT the same as whether GMP is official (GMP is never official, from anyone). */
-export type IpoDataSource =
-  | "NSE"
-  | "Chittorgarh"
-  | "Manual"
-  | "NSE + Chittorgarh"
-  | "NSE + Manual"
-  | "Chittorgarh + Manual"
-  | "NSE + Chittorgarh + Manual";
+/**
+ * Who last supplied the core facts for this IPO row — NOT the same as
+ * whether GMP is official (GMP is never official, from anyone). A
+ * " + "-joined list of every provider display name that has ever
+ * contributed to this row (see combineDataSource() in ipoSync.ts), or
+ * "Manual". Left as `string` rather than an enumerated union: the set of
+ * providers changes over time (see ipoSync.ts's PROVIDERS list), and the
+ * combination count grows combinatorially with each one added.
+ */
+export type IpoDataSource = string;
 
 export interface IpoRow {
   id: string; // stable identifier — see generateIpoId() in repositories/ipos.ts; never re-derive from name alone

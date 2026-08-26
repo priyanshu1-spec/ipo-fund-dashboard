@@ -61,12 +61,17 @@ is inherently unofficial from every source that publishes it, always. See
 `docs/DEPLOYMENT.md` §5 for the Cron frequency limitation on Vercel's free
 tier.
 
-A second provider, `src/lib/ipoProviders/chittorgarhProvider.ts`
+A second provider, `src/lib/ipoProviders/ipowatchProvider.ts`
 (`isOfficial: false`), supplements whatever NSE doesn't publish yet — lot
-size, allotment/listing dates — from chittorgarh.com's public report pages.
-It's fuzzy-matched onto the same row NSE already created (never lets its own
+size, allotment/listing dates, GMP — from ipowatch.in's public pages. It's
+fuzzy-matched onto the same row NSE already created (never lets its own
 spelling of a company name overwrite NSE's), and every row's `SOURCE` badge
 tells you exactly which provider(s) contributed to it.
+(`chittorgarhProvider.ts` was the first attempt at this — left in the
+codebase but disabled: chittorgarh.com's report pages turned out to be
+rendered client-side by JavaScript, which a plain server-side fetch can
+never execute, confirmed by its raw HTML containing zero `<table>`
+elements.)
 
 ## Quick start
 

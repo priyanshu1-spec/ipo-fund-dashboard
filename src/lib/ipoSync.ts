@@ -19,6 +19,7 @@ import {
   updateIpo,
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
+import { ipowatchProvider } from "@/lib/ipoProviders/ipowatchProvider";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import type { IpoDataSource, IpoRow } from "@/types";
 
@@ -35,7 +36,7 @@ import type { IpoDataSource, IpoRow } from "@/types";
 // a future source turns out to expose the same data via a real HTML
 // table or JSON endpoint, but it must stay out of PROVIDERS until then —
 // it was only adding latency and a permanent warning for zero rows.
-const PROVIDERS: IpoDataProvider[] = [nseProvider];
+const PROVIDERS: IpoDataProvider[] = [nseProvider, ipowatchProvider];
 
 /** Strip legal-entity noise so "XYZ Ltd" / "XYZ Limited" / "XYZ India Pvt Ltd" compare equal across sources that phrase the same company differently. */
 function normalizeCompanyName(name: string): string {
@@ -100,13 +101,15 @@ function isValid(item: NormalizedIpo): boolean {
   return true;
 }
 
-const SOURCE_PRIORITY = ["NSE", "Chittorgarh", "Manual"] as const;
+const SOURCE_PRIORITY = ["NSE", "IPOWatch", "Chittorgarh", "Manual"];
 
-/** Adds providerLabel to whatever sources already contributed to this row (order-independent, de-duplicated), rendered in a stable NSE / Chittorgarh / Manual order. */
+/** Adds providerLabel to whatever sources already contributed to this row (order-independent, de-duplicated), rendered in a stable order per SOURCE_PRIORITY — any label not listed there (a new provider added without updating this list) still appears, just after the known ones, rather than silently vanishing. */
 function combineDataSource(existing: IpoDataSource | undefined, providerLabel: string): IpoDataSource {
   const tokens = new Set(existing ? existing.split(" + ") : []);
   tokens.add(providerLabel);
-  return SOURCE_PRIORITY.filter((s) => tokens.has(s)).join(" + ") as IpoDataSource;
+  const known = SOURCE_PRIORITY.filter((s) => tokens.has(s));
+  const unknown = Array.from(tokens).filter((t) => !SOURCE_PRIORITY.includes(t));
+  return [...known, ...unknown].join(" + ");
 }
 
 /** Merges one provider's normalized row into an existing DB row (if any) — never overwrites a field the provider didn't supply, never overwrites a manually-corrected value with a blank. */
