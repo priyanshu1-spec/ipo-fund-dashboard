@@ -60,13 +60,18 @@ export async function fetchLiveQuote(rawSymbol: string): Promise<LiveQuoteResult
 
   try {
     const pageUrl = quotePageUrl(symbol);
-    // Cookie step uses the plain NSE homepage — the exact mechanism
-    // nseProvider.ts already uses successfully for IPO data — rather than
-    // the symbol-specific quote page. A first attempt using the quote page
-    // itself for both cookies and Referer got HTTP 403; a per-symbol page
-    // is more plausibly behind stricter bot detection than NSE's most
-    // generic entry point.
-    const homepageRes = await fetch("https://www.nseindia.com/", {
+    // Cookie step uses the symbol-specific quote page — REVERTED back
+    // from a prior attempt at using the bare NSE homepage ("/"). That
+    // attempt was reasoned as "safer" but real evidence showed the
+    // opposite: the homepage itself started returning 403 on the very
+    // first request, whereas this quote-page approach at least succeeds
+    // at this step (200, real cookies) and only the subsequent API call
+    // gets rejected. A bare-root request with no referer, immediately
+    // followed by an API-shaped call, is itself a common bot signature —
+    // hitting a specific deep page (what nseProvider.ts's working IPO
+    // fetch also does, via /market-data/all-upcoming-issues-ipo, never
+    // the bare root) apparently reads as more like a real visitor.
+    const homepageRes = await fetch(pageUrl, {
       headers: { ...BROWSER_HEADERS, Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
       signal: AbortSignal.timeout(12_000),
     });
