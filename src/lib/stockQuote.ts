@@ -60,7 +60,13 @@ export async function fetchLiveQuote(rawSymbol: string): Promise<LiveQuoteResult
 
   try {
     const pageUrl = quotePageUrl(symbol);
-    const homepageRes = await fetch(pageUrl, {
+    // Cookie step uses the plain NSE homepage — the exact mechanism
+    // nseProvider.ts already uses successfully for IPO data — rather than
+    // the symbol-specific quote page. A first attempt using the quote page
+    // itself for both cookies and Referer got HTTP 403; a per-symbol page
+    // is more plausibly behind stricter bot detection than NSE's most
+    // generic entry point.
+    const homepageRes = await fetch("https://www.nseindia.com/", {
       headers: { ...BROWSER_HEADERS, Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
       signal: AbortSignal.timeout(12_000),
     });
@@ -89,7 +95,16 @@ export async function fetchLiveQuote(rawSymbol: string): Promise<LiveQuoteResult
       return { ok: false, error: `No NSE-listed symbol "${symbol}" found. Check the spelling/ticker.` };
     }
     if (!apiRes.ok) {
-      return { ok: false, error: `NSE quote lookup failed (HTTP ${apiRes.status}).` };
+      // Capture what NSE actually sent back — a 403 could mean a WAF/
+      // Cloudflare challenge page (unfixable by header tweaks, needs a
+      // different approach entirely) or a plain rejected request (might
+      // just need a different header). This is the evidence needed to
+      // tell those apart instead of guessing headers blind.
+      const bodySnippet = await apiRes.text().catch(() => "");
+      return {
+        ok: false,
+        error: `NSE quote lookup failed (HTTP ${apiRes.status}). Response: ${bodySnippet.slice(0, 300) || "(empty)"}`,
+      };
     }
 
     const data = await apiRes.json();
