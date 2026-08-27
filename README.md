@@ -30,17 +30,20 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   with a live ledger computed on the fly.
 - **Dashboard** — active bids, blocked capital split, pending allotments,
   GMP-based estimated profit, monthly realised P&L, duplicate-PAN warnings,
-  and a **live share price search** (`src/components/LiveShareSearch.tsx`)
-  — opens Google's own search results for a searched company on NSE and
-  BSE. A first version tried scraping NSE's quote-equity endpoint
-  server-side (same pattern as the IPO data) but hit a confirmed Akamai
-  bot-management block (an actual "Access Denied" page, not a
-  header/cookie issue) — unlike the IPO calendar endpoint, live per-stock
-  quotes are exactly the kind of data exchanges protect hardest. Rather
-  than risk the same block against another site, this opens a link to
-  Google's own results instead: Google fetches its own data and is never
-  going to block itself, so it's reliable every time, just a link rather
-  than an inline widget.
+  and a **live share price search** (`src/components/LiveShareSearch.tsx`
+  / `src/lib/stockQuote.ts`) — inline NSE and BSE prices for any searched
+  symbol, via Yahoo Finance's chart API (`query1.finance.yahoo.com`).
+  Two earlier sources were ruled out first: NSE's own quote-equity
+  endpoint hit a confirmed Akamai bot-management block (a real "Access
+  Denied" page, not a header/cookie issue — live per-stock quotes are
+  exactly the kind of data an exchange protects hardest, unlike its IPO
+  calendar), and scraping Google's search results was ruled out outright
+  — against Google's Terms of Service and this app's own "never bypass a
+  CAPTCHA/rate-limit/access control" principle. Yahoo's endpoint is a
+  plain JSON API long-used by the open-source finance community for
+  exactly this, not a search-results page. If a symbol can't be found on
+  either exchange, the search falls back to a Google search link instead
+  of failing silently.
 - **Data source health & fetch logs** (Settings page) — see whether NSE
   fetching is currently working, and the history of every sync attempt.
 - **Excel export** — full server-side backup on demand.
