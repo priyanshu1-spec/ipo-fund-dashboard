@@ -4,14 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import { Search, TrendingUp, TrendingDown, Loader2, ExternalLink } from "lucide-react";
 
 /**
- * How often the price is re-fetched while a search result is showing. This
- * is a deliberate poll, not a true live stream — a websocket/tick-by-tick
- * feed needs a broker API (Kite Connect, Upstox, etc.) this app doesn't
- * have. 15s keeps the number visibly moving without hammering Yahoo's
- * endpoint hard enough to risk the same kind of block that shut down the
- * NSE integration.
+ * How often the price is re-fetched while a search result is showing.
+ *
+ * Millisecond-by-millisecond ticking (what a broker app like Kite/Groww
+ * shows) comes from a live WebSocket feed pushed by the exchange to a
+ * paying broker-API subscriber — the price changes because the exchange
+ * itself is streaming every trade tick as it happens. Yahoo's endpoint
+ * here is the opposite: a plain HTTP snapshot you have to ask for one
+ * request at a time, and it does not update its own underlying value any
+ * faster than roughly once every few seconds even from Yahoo's own
+ * website. Polling it every millisecond would (a) get back the exact same
+ * number nearly every time, since nothing new exists to return that fast,
+ * and (b) very likely get this endpoint rate-limited/blocked the same way
+ * NSE's was, since that's indistinguishable from abusive traffic. 3s is
+ * about as fast as this data source can honestly go; true sub-second
+ * ticking needs a broker API (Kite Connect, Upstox, Angel One, ...) with a
+ * live market-data subscription, which is separate infrastructure this
+ * app doesn't have.
  */
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 3_000;
 
 interface LiveQuote {
   symbol: string;
@@ -50,10 +61,15 @@ export function LiveShareSearch() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [flash, setFlash] = useState<{ nse?: "up" | "down"; bse?: "up" | "down" }>({});
 
   // Tracks the in-flight query so the poll below always re-fetches the
   // latest search rather than a stale closure from when the interval was set.
   const searchedRef = useRef<string | null>(null);
+  // Last price seen per exchange, so a poll can tell whether the new number
+  // actually moved (and which way) — that's what drives the flash below.
+  const prevPricesRef = useRef<{ nse?: number; bse?: number }>({});
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function runQuery(query: string, showSpinner: boolean) {
     if (showSpinner) setLoading(true);
@@ -70,6 +86,19 @@ export function LiveShareSearch() {
         return;
       }
       setError(null);
+      const nextFlash: typeof flash = {};
+      for (const key of ["nse", "bse"] as const) {
+        const price = json?.[key]?.lastPrice;
+        if (typeof price !== "number") continue;
+        const prev = prevPricesRef.current[key];
+        if (prev != null && price !== prev) nextFlash[key] = price > prev ? "up" : "down";
+        prevPricesRef.current[key] = price;
+      }
+      if (Object.keys(nextFlash).length) {
+        if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+        setFlash(nextFlash);
+        flashTimeoutRef.current = setTimeout(() => setFlash({}), 900);
+      }
       setData(json as QuoteResponse);
       setLastUpdated(new Date());
     } catch {
@@ -88,6 +117,8 @@ export function LiveShareSearch() {
     setError(null);
     setData(null);
     setLastUpdated(null);
+    setFlash({});
+    prevPricesRef.current = {};
     setSearched(trimmed);
     searchedRef.current = trimmed;
     await runQuery(trimmed, true);
@@ -102,6 +133,12 @@ export function LiveShareSearch() {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searched]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    };
+  }, []);
 
   function googleSearchUrl(query: string): string {
     return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
@@ -195,7 +232,15 @@ export function LiveShareSearch() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-slate-900 dark:text-white">
+                    <p
+                      className={`rounded px-1 text-lg font-bold transition-colors duration-700 ${
+                        flash[key] === "up"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                          : flash[key] === "down"
+                            ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                            : "text-slate-900 dark:text-white"
+                      }`}
+                    >
                       ₹{quote.lastPrice.toFixed(2)}
                     </p>
                     {quote.change != null && (
