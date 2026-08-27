@@ -1,7 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, TrendingUp, TrendingDown, Loader2, ExternalLink } from "lucide-react";
+
+/**
+ * How often the price is re-fetched while a search result is showing. This
+ * is a deliberate poll, not a true live stream — a websocket/tick-by-tick
+ * feed needs a broker API (Kite Connect, Upstox, etc.) this app doesn't
+ * have. 15s keeps the number visibly moving without hammering Yahoo's
+ * endpoint hard enough to risk the same kind of block that shut down the
+ * NSE integration.
+ */
+const POLL_INTERVAL_MS = 15_000;
 
 interface LiveQuote {
   symbol: string;
@@ -20,6 +30,7 @@ interface LiveQuote {
 }
 
 interface QuoteResponse {
+  resolvedName?: string;
   nse: LiveQuote | null;
   bse: LiveQuote | null;
   nseError?: string;
@@ -38,17 +49,16 @@ export function LiveShareSearch() {
   const [data, setData] = useState<QuoteResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed) return;
-    setLoading(true);
-    setError(null);
-    setData(null);
-    setSearched(trimmed);
+  // Tracks the in-flight query so the poll below always re-fetches the
+  // latest search rather than a stale closure from when the interval was set.
+  const searchedRef = useRef<string | null>(null);
+
+  async function runQuery(query: string, showSpinner: boolean) {
+    if (showSpinner) setLoading(true);
     try {
-      const res = await fetch(`/api/stock-quote?symbol=${encodeURIComponent(trimmed)}`);
+      const res = await fetch(`/api/stock-quote?symbol=${encodeURIComponent(query)}`);
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError("Couldn't find a live price for that symbol on either exchange.");
@@ -59,13 +69,39 @@ export function LiveShareSearch() {
         setData({ nse: null, bse: null, nseError: json?.nseError, bseError: json?.bseError });
         return;
       }
+      setError(null);
       setData(json as QuoteResponse);
+      setLastUpdated(new Date());
     } catch {
-      setError("Lookup failed.");
+      if (showSpinner) setError("Lookup failed.");
+      // A background poll failing silently keeps the last-good price on
+      // screen instead of blanking a working result over one bad request.
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    setError(null);
+    setData(null);
+    setLastUpdated(null);
+    setSearched(trimmed);
+    searchedRef.current = trimmed;
+    await runQuery(trimmed, true);
+  }
+
+  useEffect(() => {
+    if (!searched) return;
+    const id = setInterval(() => {
+      const current = searchedRef.current;
+      if (current) runQuery(current, false);
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched]);
 
   function googleSearchUrl(query: string): string {
     return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
@@ -79,7 +115,7 @@ export function LiveShareSearch() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
           <input
             className="input pl-9"
-            placeholder="Symbol — e.g. TCS, INFY, RELIANCE"
+            placeholder="Symbol or company name — e.g. TCS or Tata Consultancy Services"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
@@ -112,6 +148,21 @@ export function LiveShareSearch() {
               <ExternalLink size={12} /> {searched} on BSE (Google)
             </a>
           </div>
+        </div>
+      )}
+
+      {data && (data.nse || data.bse) && (
+        <div className="mt-3 flex items-center justify-between">
+          {data.resolvedName && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Matched: <span className="font-medium text-slate-700 dark:text-slate-200">{data.resolvedName}</span>
+            </p>
+          )}
+          {lastUpdated && (
+            <p className="ml-auto text-[11px] text-slate-400">
+              Updated {lastUpdated.toLocaleTimeString()} · refreshes every {POLL_INTERVAL_MS / 1000}s
+            </p>
+          )}
         </div>
       )}
 

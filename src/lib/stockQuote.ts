@@ -29,6 +29,7 @@ const HEADERS = {
 };
 
 const CHART_API_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
+const SEARCH_API_BASE = "https://query1.finance.yahoo.com/v1/finance/search";
 
 export type Exchange = "NSE" | "BSE";
 
@@ -56,11 +57,58 @@ function num(v: unknown): number | undefined {
 }
 
 const SUFFIX: Record<Exchange, string> = { NSE: ".NS", BSE: ".BO" };
+// Yahoo's own exchange codes for the two Indian exchanges, as seen in its
+// search endpoint's results.
+const INDIA_EXCHANGE_CODES = new Set(["NSI", "BSE"]);
+
+export interface ResolvedSymbol {
+  symbol: string;
+  name?: string;
+}
+
+/**
+ * Resolves a free-text query (a company name, a partial name, or an exact
+ * ticker) to a bare NSE/BSE trading symbol via Yahoo's own search/
+ * autocomplete endpoint — the same one Yahoo Finance's own site uses, and
+ * the same family of API as the chart endpoint below (same honest caveat:
+ * exact field names are from general knowledge, not a verified live
+ * fetch). Returns undefined (not an error) when nothing matches, so the
+ * caller can fall back to treating the raw input as an exact symbol —
+ * that keeps a plain ticker search working even if this resolution step
+ * itself fails or Yahoo changes its search response shape.
+ */
+export async function resolveQuery(query: string): Promise<ResolvedSymbol | undefined> {
+  const trimmed = query.trim();
+  if (!trimmed) return undefined;
+  try {
+    const res = await fetch(
+      `${SEARCH_API_BASE}?q=${encodeURIComponent(trimmed)}&quotesCount=10&newsCount=0`,
+      { headers: HEADERS, signal: AbortSignal.timeout(10_000) }
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const quotes = Array.isArray(data?.quotes) ? (data.quotes as Record<string, unknown>[]) : [];
+    const match = quotes.find(
+      (q) =>
+        q.quoteType === "EQUITY" &&
+        typeof q.exchange === "string" &&
+        INDIA_EXCHANGE_CODES.has(q.exchange) &&
+        typeof q.symbol === "string"
+    );
+    if (!match) return undefined;
+    const rawSymbol = String(match.symbol);
+    const bareSymbol = rawSymbol.replace(/\.(NS|BO)$/i, "");
+    const name = typeof match.longname === "string" ? match.longname : typeof match.shortname === "string" ? match.shortname : undefined;
+    return { symbol: bareSymbol, name };
+  } catch {
+    return undefined;
+  }
+}
 
 export async function fetchLiveQuote(rawSymbol: string, exchange: Exchange): Promise<LiveQuoteResult> {
   const symbol = rawSymbol.trim().toUpperCase();
   if (!symbol || !/^[A-Z0-9&.\-]{1,20}$/.test(symbol)) {
-    return { ok: false, error: "Enter a valid trading symbol (e.g. TCS, INFY, RELIANCE)." };
+    return { ok: false, error: "Enter a valid trading symbol or company name." };
   }
 
   const yahooSymbol = `${symbol}${SUFFIX[exchange]}`;

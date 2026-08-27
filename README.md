@@ -32,18 +32,28 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   GMP-based estimated profit, monthly realised P&L, duplicate-PAN warnings,
   and a **live share price search** (`src/components/LiveShareSearch.tsx`
   / `src/lib/stockQuote.ts`) — inline NSE and BSE prices for any searched
-  symbol, via Yahoo Finance's chart API (`query1.finance.yahoo.com`).
-  Two earlier sources were ruled out first: NSE's own quote-equity
-  endpoint hit a confirmed Akamai bot-management block (a real "Access
-  Denied" page, not a header/cookie issue — live per-stock quotes are
-  exactly the kind of data an exchange protects hardest, unlike its IPO
+  symbol *or company name*, via Yahoo Finance's chart and search APIs
+  (`query1.finance.yahoo.com`). A free-text query ("Tata Consultancy
+  Services") is resolved to a bare NSE/BSE ticker first via Yahoo's own
+  search/autocomplete endpoint (`resolveQuery()`), filtered to equities on
+  India's two exchanges; an exact ticker keeps working unchanged if that
+  resolution step finds nothing. Once shown, the price re-fetches every 15
+  seconds on its own (`POLL_INTERVAL_MS` in `LiveShareSearch.tsx`) so the
+  number visibly moves rather than sitting on one static snapshot — a
+  deliberate poll, not a tick-by-tick stream, since true real-time push
+  needs a broker API (Kite Connect, Upstox, etc.) this app doesn't have; a
+  failed background poll keeps the last-good price on screen rather than
+  blanking it. Two earlier sources were ruled out first: NSE's own
+  quote-equity endpoint hit a confirmed Akamai bot-management block (a real
+  "Access Denied" page, not a header/cookie issue — live per-stock quotes
+  are exactly the kind of data an exchange protects hardest, unlike its IPO
   calendar), and scraping Google's search results was ruled out outright
   — against Google's Terms of Service and this app's own "never bypass a
-  CAPTCHA/rate-limit/access control" principle. Yahoo's endpoint is a
-  plain JSON API long-used by the open-source finance community for
-  exactly this, not a search-results page. If a symbol can't be found on
-  either exchange, the search falls back to a Google search link instead
-  of failing silently.
+  CAPTCHA/rate-limit/access control" principle. Yahoo's endpoints are plain
+  JSON APIs long-used by the open-source finance community for exactly
+  this, not search-results pages. If a symbol can't be found on either
+  exchange, the search falls back to a Google search link instead of
+  failing silently.
 - **Data source health & fetch logs** (Settings page) — see whether NSE
   fetching is currently working, and the history of every sync attempt.
 - **Excel export** — full server-side backup on demand.
