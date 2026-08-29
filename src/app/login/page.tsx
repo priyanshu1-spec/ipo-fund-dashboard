@@ -88,6 +88,10 @@ function LoginCard() {
         </Link>
         {" "}— an admin will need to approve it.
       </p>
+      <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+        Forgot your password? There&apos;s no automatic email reset — ask your admin to reset it for you
+        from the Admin panel.
+      </p>
     </div>
   );
 }

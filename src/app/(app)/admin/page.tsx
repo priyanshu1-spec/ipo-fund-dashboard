@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { ShieldOff, UserCheck, UserX, History, Trash2 } from "lucide-react";
+import { ShieldOff, UserCheck, UserX, History, Trash2, KeyRound } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
+import { Modal } from "@/components/Modal";
 import type { ActivityLogEntry, UserAccount, UserAccountStatus, UserRole } from "@/types";
 
 const STATUS_COLORS: Record<UserAccountStatus, string> = {
@@ -44,6 +46,7 @@ function UsersSection({ selfId }: { selfId?: string }) {
   const { data, mutate, isLoading } = useSWR<{ users: UserAccount[] }>("/api/admin/users", fetcher);
   const users = data?.users ?? [];
   const pending = users.filter((u) => u.status === "pending");
+  const [resetPwdUser, setResetPwdUser] = useState<UserAccount | null>(null);
 
   async function setStatus(id: string, status: UserAccountStatus) {
     await apiRequest(`/api/admin/users/${id}`, "PATCH", { status });
@@ -164,6 +167,13 @@ function UsersSection({ selfId }: { selfId?: string }) {
                         Approve
                       </button>
                     )}
+                    <button
+                      onClick={() => setResetPwdUser(u)}
+                      title="Set a new password for this account (e.g. they forgot it)"
+                      className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:underline dark:text-slate-400"
+                    >
+                      <KeyRound size={12} /> Reset password
+                    </button>
                     {u.id !== selfId && (
                       <button
                         onClick={() => removeUser(u.id, u.email)}
@@ -180,7 +190,82 @@ function UsersSection({ selfId }: { selfId?: string }) {
           </tbody>
         </table>
       </div>
+
+      <ResetPasswordModal user={resetPwdUser} onClose={() => setResetPwdUser(null)} />
     </section>
+  );
+}
+
+function ResetPasswordModal({ user, onClose }: { user: UserAccount | null; onClose: () => void }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  function close() {
+    setNewPassword("");
+    setError(null);
+    setSuccess(false);
+    onClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/users/${user.id}`, "PATCH", { newPassword });
+      setSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reset password");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={!!user} onClose={close} title={user ? `Reset password — ${user.name}` : "Reset password"}>
+      {success ? (
+        <div className="space-y-3 text-sm">
+          <p className="text-emerald-600">
+            Password changed. Share the new password with <strong>{user?.email}</strong> yourself — it
+            isn&apos;t emailed automatically.
+          </p>
+          <button type="button" className="btn-secondary" onClick={close}>
+            Done
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Sets a new password for <strong>{user?.email}</strong> directly — for when they&apos;ve
+            forgotten theirs. Let them know the new password yourself once it&apos;s set.
+          </p>
+          <div>
+            <label className="label">New password</label>
+            <input
+              type="password"
+              className="input"
+              required
+              minLength={8}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoFocus
+            />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={close}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Reset password"}
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
 

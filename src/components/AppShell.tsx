@@ -15,6 +15,7 @@ import {
   Download,
   Menu,
   X,
+  UserCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -88,6 +89,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           Admin
         </Link>
       )}
+      <Link
+        href="/account"
+        onClick={() => setMobileOpen(false)}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+          pathname === "/account"
+            ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow-sm"
+            : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+        )}
+      >
+        <UserCircle size={17} />
+        My Account
+      </Link>
       <a
         href="/api/export"
         className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"

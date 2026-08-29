@@ -44,6 +44,16 @@ export async function getUserAuthByEmail(
   return { ...toUser(rows[0]), passwordHash: String(rows[0].password_hash ?? "") };
 }
 
+/** Same as getUserAuthByEmail but by id — needed for a logged-in user changing their own password, where we already have their id from the session and don't want to round-trip through their email. Never return this to the client. */
+export async function getUserAuthById(
+  id: string
+): Promise<(UserAccount & { passwordHash: string }) | undefined> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM users WHERE id = ${id}`;
+  if (!rows[0]) return undefined;
+  return { ...toUser(rows[0]), passwordHash: String(rows[0].password_hash ?? "") };
+}
+
 /**
  * Called once per authenticated API request (see apiAuth.ts) for every
  * real account — this is the actual revocation mechanism, since a JWT
@@ -108,6 +118,14 @@ export async function setUserStatus(
 export async function setUserRole(id: string, role: UserRole): Promise<UserAccount> {
   await ensureSchema();
   const { rows } = await sql`UPDATE users SET role = ${role} WHERE id = ${id} RETURNING *`;
+  if (!rows[0]) throw new Error(`User ${id} not found`);
+  return toUser(rows[0]);
+}
+
+/** Takes an already-hashed password — never a plaintext one. Used by both an admin resetting someone else's forgotten password and a user changing their own. */
+export async function setUserPasswordHash(id: string, passwordHash: string): Promise<UserAccount> {
+  await ensureSchema();
+  const { rows } = await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${id} RETURNING *`;
   if (!rows[0]) throw new Error(`User ${id} not found`);
   return toUser(rows[0]);
 }

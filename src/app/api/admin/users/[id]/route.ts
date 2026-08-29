@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
-import { deleteUser, getUserById, setUserRole, setUserStatus } from "@/lib/repositories/users";
+import {
+  deleteUser,
+  getUserById,
+  setUserPasswordHash,
+  setUserRole,
+  setUserStatus,
+} from "@/lib/repositories/users";
 import { recordActivity } from "@/lib/repositories/activityLog";
 
 const patchSchema = z.object({
   status: z.enum(["pending", "approved", "rejected", "disabled"]).optional(),
   role: z.enum(["viewer", "editor", "admin"]).optional(),
+  // Admin-assisted "forgot password" recovery — sets a new password directly,
+  // no email/token flow needed. The admin picks the value and relays it to
+  // the user out of band (in person, chat, etc).
+  newPassword: z.string().min(8, "Password must be at least 8 characters").optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -18,7 +29,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  if (!parsed.data.status && !parsed.data.role) {
+  if (!parsed.data.status && !parsed.data.role && !parsed.data.newPassword) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
   // An admin locking themselves out (suspending their own account, or
@@ -59,6 +70,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         entityId: user.id,
         entityLabel: user.email,
         details: `role -> ${parsed.data.role}`,
+      });
+    }
+    if (parsed.data.newPassword) {
+      const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
+      user = await setUserPasswordHash(params.id, passwordHash);
+      await recordActivity({
+        userId: auth.userId,
+        userName: auth.actor,
+        action: "update",
+        entityType: "user",
+        entityId: user.id,
+        entityLabel: user.email,
+        // Deliberately no password value or hash in the audit trail.
+        details: "password reset by admin",
       });
     }
 

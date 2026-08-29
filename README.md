@@ -73,9 +73,19 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   original shared password(s) still work too, as a bootstrap/recovery path
   (grants `admin`).
 - **Admin panel** — approve/reject signups, manage roles, disable or
-  permanently delete accounts, see each user's last-active time, and a
-  real-time activity log of every create/update/delete across IPOs,
-  applications, funds, and investors.
+  permanently delete accounts, **reset any user's forgotten password**
+  directly (no email involved — the admin sets a new one and relays it to
+  the user out of band), see each user's last-active time, and a real-time
+  activity log of every create/update/delete across IPOs, applications,
+  funds, and investors.
+- **My Account** (`/account`) — every signed-in user (any role) can see
+  their own name, email, role, status, and last-active time, and change
+  their own password (current password required). There's no automatic
+  "forgot password" email flow (that needs a third-party email-sending
+  service, which isn't set up) — if you can't sign in at all, an admin
+  resets your password for you from the Admin panel above; the shared
+  bootstrap password remains the ultimate recovery path for the admin
+  themselves if their own account is ever locked out.
 
 ## Automated IPO data fetching — how and what's realistic
 
