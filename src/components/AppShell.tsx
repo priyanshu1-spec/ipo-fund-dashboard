@@ -170,7 +170,7 @@ function UserFooter() {
   return (
     <div className="mt-auto border-t border-slate-200 px-4 pt-3 dark:border-slate-800">
       <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-        {session?.user?.name ?? "Signed in"}
+        {session?.user?.username || session?.user?.name || "Signed in"}
       </p>
       <p className="mb-2 text-xs capitalize text-slate-500 dark:text-slate-400">
         {role === "admin" ? "Admin (full access)" : role === "editor" ? "Full access" : "View only"}

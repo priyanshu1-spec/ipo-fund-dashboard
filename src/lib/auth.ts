@@ -68,7 +68,13 @@ export const authOptions: AuthOptions = {
         if (!user || user.status !== "approved") return null;
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
-        return { id: user.id, name: user.name || user.email, email: user.email, role: user.role };
+        return {
+          id: user.id,
+          name: user.name || user.email,
+          username: user.username || null,
+          email: user.email,
+          role: user.role,
+        };
       },
     }),
   ],
@@ -82,6 +88,7 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.role = (user as unknown as { role: UserRole }).role;
         token.name = user.name;
+        token.username = (user as unknown as { username?: string | null }).username ?? null;
       }
       return token;
     },
@@ -90,6 +97,7 @@ export const authOptions: AuthOptions = {
         session.user.id = token.sub;
         session.user.role = token.role as UserRole;
         session.user.name = token.name;
+        session.user.username = token.username ?? null;
       }
       return session;
     },
