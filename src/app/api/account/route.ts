@@ -7,6 +7,7 @@ import {
   getUserByUsername,
   setUserName,
   setUserPasswordHash,
+  setUserSecurityQuestion,
   setUserUsername,
 } from "@/lib/repositories/users";
 
@@ -42,10 +43,11 @@ export async function GET() {
   return NextResponse.json({ bootstrap: false, ...auth.user });
 }
 
-// name, username, and the password-change pair are all independent — a
-// request can carry any combination. Changing the password still requires
-// the current one; changing the name/username does not (neither is
-// security-sensitive).
+// name, username, the security question pair, and the password-change pair
+// are all independent — a request can carry any combination. Changing the
+// password still requires the current one; the others don't (none of them
+// are the credential itself, and all of this only runs for whoever is
+// already logged in as this exact account).
 const patchSchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
@@ -56,12 +58,20 @@ const patchSchema = z
       .regex(/^[a-zA-Z0-9_]{3,30}$/, "Username must be 3-30 letters, numbers, or underscores")
       .or(z.literal(""))
       .optional(),
+    // Both required together, same reasoning as registration — no account
+    // should end up with a question and no answer or vice versa.
+    securityQuestion: z.string().trim().min(1).max(200).optional(),
+    securityAnswer: z.string().trim().min(1).max(200).optional(),
     currentPassword: z.string().optional(),
     newPassword: z.string().min(8, "New password must be at least 8 characters").optional(),
   })
   .refine((data) => !data.newPassword || !!data.currentPassword, {
     message: "Enter your current password to change it",
     path: ["currentPassword"],
+  })
+  .refine((data) => !!data.securityQuestion === !!data.securityAnswer, {
+    message: "Enter both a security question and an answer",
+    path: ["securityAnswer"],
   });
 
 export async function PATCH(req: Request) {
@@ -80,7 +90,12 @@ export async function PATCH(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  if (!parsed.data.name && parsed.data.username == null && !parsed.data.newPassword) {
+  if (
+    !parsed.data.name &&
+    parsed.data.username == null &&
+    !parsed.data.securityQuestion &&
+    !parsed.data.newPassword
+  ) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
   // requireApiAuth() already confirmed this account exists and is approved
@@ -100,6 +115,11 @@ export async function PATCH(req: Request) {
       }
     }
     await setUserUsername(auth.userId, parsed.data.username);
+  }
+
+  if (parsed.data.securityQuestion && parsed.data.securityAnswer) {
+    const answerHash = await bcrypt.hash(parsed.data.securityAnswer.toLowerCase(), 10);
+    await setUserSecurityQuestion(auth.userId, parsed.data.securityQuestion, answerHash);
   }
 
   if (parsed.data.newPassword) {

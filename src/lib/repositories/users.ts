@@ -7,6 +7,7 @@ function toUser(r: Record<string, unknown>): UserAccount {
     id: String(r.id ?? ""),
     email: String(r.email ?? ""),
     username: String(r.username ?? ""),
+    securityQuestion: String(r.security_question ?? ""),
     name: String(r.name ?? ""),
     role: (r.role as UserRole) || "viewer",
     status: (r.status as UserAccountStatus) || "pending",
@@ -115,6 +116,7 @@ export async function createUser(input: {
     id,
     email: input.email.toLowerCase(),
     username,
+    securityQuestion: "",
     name: input.name,
     role: "viewer",
     status: "pending",
@@ -178,53 +180,53 @@ export async function deleteUser(id: string): Promise<void> {
 }
 
 // ============================================================================
-// Forgot-password OTP — deliberately separate from the password-change
-// functions above. Internal — includes reset_otp_hash, never returned to
-// the client (same rule as passwordHash).
+// Forgot-password via security question — no email service required. The
+// question is shown to anyone attempting a reset for that email (it has
+// to be, to be answerable), so getUserSecurityQuestionByEmail() is safe to
+// call unauthenticated; the answer hash is only ever fetched internally by
+// getUserSecurityAuthByEmail() for the actual verification step.
 // ============================================================================
 
-export interface UserResetAuth extends UserAccount {
-  resetOtpHash: string;
-  resetOtpExpiresAt: string;
-  resetOtpAttempts: number;
+export interface UserSecurityAuth extends UserAccount {
+  securityQuestion: string;
+  securityAnswerHash: string;
 }
 
-function toResetAuth(r: Record<string, unknown>): UserResetAuth {
+function toSecurityAuth(r: Record<string, unknown>): UserSecurityAuth {
   return {
     ...toUser(r),
-    resetOtpHash: String(r.reset_otp_hash ?? ""),
-    resetOtpExpiresAt: String(r.reset_otp_expires_at ?? ""),
-    resetOtpAttempts: Number(r.reset_otp_attempts ?? 0),
+    securityQuestion: String(r.security_question ?? ""),
+    securityAnswerHash: String(r.security_answer_hash ?? ""),
   };
 }
 
-export async function getUserResetAuthByEmail(email: string): Promise<UserResetAuth | undefined> {
+/** Public-safe by design — returns only the question text (or undefined if none set / no such account), never the answer. Used by forgot-password's step 1, unauthenticated. */
+export async function getUserSecurityQuestionByEmail(
+  email: string
+): Promise<{ id: string; question: string } | undefined> {
   await ensureSchema();
   const { rows } = await sql`SELECT * FROM users WHERE lower(email) = ${email.toLowerCase()}`;
-  return rows[0] ? toResetAuth(rows[0]) : undefined;
+  const row = rows[0];
+  if (!row || !row.security_question) return undefined;
+  return { id: String(row.id), question: String(row.security_question) };
 }
 
-/** Stores a freshly-issued OTP's hash + expiry and resets the attempt counter — called each time a new code is requested, invalidating any earlier unused one. */
-export async function setUserResetOtp(id: string, otpHash: string, expiresAt: string): Promise<void> {
+/** Internal — includes the answer hash, needed only to verify a reset attempt. Never return this to the client. */
+export async function getUserSecurityAuthByEmail(email: string): Promise<UserSecurityAuth | undefined> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM users WHERE lower(email) = ${email.toLowerCase()}`;
+  return rows[0] ? toSecurityAuth(rows[0]) : undefined;
+}
+
+/** Takes an already-hashed answer — never plaintext. Used at registration and later from My Account to set or change the question. */
+export async function setUserSecurityQuestion(
+  id: string,
+  question: string,
+  answerHash: string
+): Promise<void> {
   await ensureSchema();
   await sql`
-    UPDATE users SET reset_otp_hash = ${otpHash}, reset_otp_expires_at = ${expiresAt}, reset_otp_attempts = 0
+    UPDATE users SET security_question = ${question}, security_answer_hash = ${answerHash}
     WHERE id = ${id}
   `;
-}
-
-/** Called on each wrong-code guess; returns the new attempt count so the caller can decide whether to invalidate the code outright. */
-export async function incrementResetOtpAttempts(id: string): Promise<number> {
-  await ensureSchema();
-  const { rows } = await sql`
-    UPDATE users SET reset_otp_attempts = reset_otp_attempts + 1 WHERE id = ${id}
-    RETURNING reset_otp_attempts
-  `;
-  return Number(rows[0]?.reset_otp_attempts ?? 0);
-}
-
-/** Called after a successful reset (or to explicitly invalidate a code, e.g. too many wrong attempts) — clearing the hash means no code can verify against it again. */
-export async function clearUserResetOtp(id: string): Promise<void> {
-  await ensureSchema();
-  await sql`UPDATE users SET reset_otp_hash = '', reset_otp_expires_at = '', reset_otp_attempts = 0 WHERE id = ${id}`;
 }

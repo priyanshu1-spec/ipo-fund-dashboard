@@ -110,7 +110,7 @@ still fully visible and editable by any `admin`, just invisible to
 | status | `pending` \| `approved` \| `rejected` \| `disabled` — only `approved` can sign in |
 | created_at, approved_at, approved_by | |
 | last_active_at | stamped on every authenticated API request (see below) |
-| reset_otp_hash, reset_otp_expires_at, reset_otp_attempts | forgot-password OTP (bcrypt-hashed, 10-minute expiry, 5-attempt cap) — see `src/app/api/auth/{forgot-password,reset-password}/route.ts` |
+| security_question, security_answer_hash | forgot-password recovery — question stored in the clear (shown to whoever attempts a reset for that email; unavoidable, since answering it *is* the identity proof), answer bcrypt-hashed. See `src/app/api/auth/{forgot-password,reset-password}/route.ts`. |
 
 Sign-up (`/register`) always creates a `pending` row with role `viewer`; an
 admin changes status/role from `/admin`. The original Milestone 1 shared

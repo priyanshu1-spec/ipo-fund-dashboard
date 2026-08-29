@@ -86,19 +86,22 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   own display name; and change their own password (current password
   required).
 - **Forgot password** (`/forgot-password`) — self-service, for a real
-  registered account only (not the shared password): enter your email,
-  get a 4-digit code by email (via Resend — see `docs/DEPLOYMENT.md` §8;
-  without `RESEND_API_KEY` configured this returns a clear error rather
-  than silently doing nothing), enter it with a new password. The code is
-  bcrypt-hashed at rest (never stored in plain text), expires in 10
-  minutes, and locks out after 5 wrong guesses — a 4-digit space is only
-  10,000 possibilities, so those two limits are load-bearing, not
-  decorative. The request step always returns the same response whether
-  or not the email has an account, so this can't be used to find out who
-  has an account here. If email isn't configured, or you can't sign in at
-  all, an admin resets your password for you from the Admin panel above;
-  the shared bootstrap password remains the ultimate recovery path for the
-  admin themselves if their own account is ever locked out.
+  registered account only (not the shared password), via a security
+  question: set one at `/register` (optional, skippable) or later from My
+  Account, then answer it to set a new password — no email service, no
+  extra setup, works immediately. The answer is bcrypt-hashed at rest,
+  never stored in plain text, and matched case/whitespace-insensitively so
+  a forgotten capitalization doesn't lock you out of your own recovery
+  path. Known, accepted trade-off: unlike a one-time emailed code, the
+  question itself has to be shown to whoever attempts a reset for that
+  email — there's no way to gate the challenge behind proving identity
+  first, since answering it *is* the identity proof — and there's no
+  expiry or attempt limit on guessing the answer (a security question
+  doesn't naturally expire the way a code does). Reasonable for a small
+  private deployment; if you can't sign in at all and never set a
+  question, an admin resets your password for you from the Admin panel
+  above, and the shared bootstrap password remains the ultimate recovery
+  path for the admin themselves if their own account is ever locked out.
   The shared bootstrap login(s) have no personal name/password to manage
   here (nothing is stored in the database for them) — optionally set
   `APP_ACCESS_NAME` / `APP_VIEWER_NAME` in Vercel to give them a display

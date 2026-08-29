@@ -6,24 +6,26 @@ import { TrendingUp, ShieldCheck } from "lucide-react";
 import { apiRequest } from "@/lib/fetcher";
 
 export default function ForgotPasswordPage() {
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [step, setStep] = useState<"email" | "answer">("email");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
-  async function handleRequestCode(e: React.FormEvent) {
+  async function handleLookup(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await apiRequest("/api/auth/forgot-password", "POST", { email });
-      setStep("code");
+      const result = await apiRequest<{ question: string }>("/api/auth/forgot-password", "POST", { email });
+      setQuestion(result.question);
+      setStep("answer");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send code");
+      setError(err instanceof Error ? err.message : "Failed to look up account");
     } finally {
       setSubmitting(false);
     }
@@ -38,7 +40,7 @@ export default function ForgotPasswordPage() {
     }
     setSubmitting(true);
     try {
-      await apiRequest("/api/auth/reset-password", "POST", { email, otp, newPassword });
+      await apiRequest("/api/auth/reset-password", "POST", { email, answer, newPassword });
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset password");
@@ -67,10 +69,10 @@ export default function ForgotPasswordPage() {
         ) : step === "email" ? (
           <>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Enter your account email and we&apos;ll send a 4-digit code to reset your password. This only
-              works for a real registered account — not the shared access password.
+              Enter your account email. If you set up a security question, you&apos;ll be asked it next.
+              This only works for a real registered account — not the shared access password.
             </p>
-            <form onSubmit={handleRequestCode} className="mt-6 space-y-3 text-left">
+            <form onSubmit={handleLookup} className="mt-6 space-y-3 text-left">
               <div>
                 <label className="label">Email</label>
                 <input
@@ -86,34 +88,31 @@ export default function ForgotPasswordPage() {
               </div>
               {error && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                  {error}
+                  {error} If you don&apos;t have a security question set up, ask your admin to reset your
+                  password from the Admin panel instead.
                 </p>
               )}
               <button type="submit" className="btn-primary w-full" disabled={submitting}>
-                {submitting ? "Sending…" : "Send code"}
+                {submitting ? "Checking…" : "Continue"}
               </button>
             </form>
           </>
         ) : (
           <>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              If an account exists for <strong>{email}</strong>, a 4-digit code was just emailed to it
-              (expires in 10 minutes). Enter it below with your new password.
+              Answer your security question and set a new password.
             </p>
             <form onSubmit={handleResetPassword} className="mt-6 space-y-3 text-left">
               <div>
-                <label className="label">4-digit code</label>
+                <label className="label">{question}</label>
                 <input
                   type="text"
                   required
                   autoFocus
-                  inputMode="numeric"
-                  pattern="\d{4}"
-                  maxLength={4}
-                  className="input tracking-[0.5em] text-center"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="0000"
+                  className="input"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  placeholder="Your answer"
                 />
               </div>
               <div>
@@ -146,7 +145,7 @@ export default function ForgotPasswordPage() {
                   {error}
                 </p>
               )}
-              <button type="submit" className="btn-primary w-full" disabled={submitting || otp.length !== 4}>
+              <button type="submit" className="btn-primary w-full" disabled={submitting}>
                 {submitting ? "Resetting…" : "Reset password"}
               </button>
               <button
@@ -154,11 +153,11 @@ export default function ForgotPasswordPage() {
                 className="w-full text-center text-xs font-medium text-slate-500 hover:underline dark:text-slate-400"
                 onClick={() => {
                   setStep("email");
-                  setOtp("");
+                  setAnswer("");
                   setError(null);
                 }}
               >
-                Use a different email or resend code
+                Use a different email
               </button>
             </form>
           </>

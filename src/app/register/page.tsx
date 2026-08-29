@@ -4,22 +4,36 @@ import Link from "next/link";
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { apiRequest } from "@/lib/fetcher";
+import { SECURITY_QUESTION_CUSTOM, SECURITY_QUESTION_PRESETS } from "@/lib/securityQuestions";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [securityQuestionChoice, setSecurityQuestionChoice] = useState("");
+  const [customSecurityQuestion, setCustomSecurityQuestion] = useState("");
+  const [securityAnswer, setSecurityAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+
+  const securityQuestion =
+    securityQuestionChoice === SECURITY_QUESTION_CUSTOM ? customSecurityQuestion : securityQuestionChoice;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await apiRequest("/api/auth/register", "POST", { name, email, username, password });
+      await apiRequest("/api/auth/register", "POST", {
+        name,
+        email,
+        username,
+        password,
+        securityQuestion,
+        securityAnswer,
+      });
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -102,6 +116,48 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                 />
               </div>
+              <div>
+                <label className="label">
+                  Security question (optional now — needed later to reset your password without an admin)
+                </label>
+                <select
+                  className="input"
+                  value={securityQuestionChoice}
+                  onChange={(e) => setSecurityQuestionChoice(e.target.value)}
+                >
+                  <option value="">Skip for now</option>
+                  {SECURITY_QUESTION_PRESETS.map((q) => (
+                    <option key={q} value={q}>
+                      {q}
+                    </option>
+                  ))}
+                  <option value={SECURITY_QUESTION_CUSTOM}>Write my own question…</option>
+                </select>
+              </div>
+              {securityQuestionChoice === SECURITY_QUESTION_CUSTOM && (
+                <div>
+                  <label className="label">Your question</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={customSecurityQuestion}
+                    onChange={(e) => setCustomSecurityQuestion(e.target.value)}
+                    placeholder="e.g. What street did you grow up on?"
+                  />
+                </div>
+              )}
+              {securityQuestionChoice && (
+                <div>
+                  <label className="label">Your answer</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={securityAnswer}
+                    onChange={(e) => setSecurityAnswer(e.target.value)}
+                    placeholder="Answer isn't case-sensitive"
+                  />
+                </div>
+              )}
               {error && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
                   {error}

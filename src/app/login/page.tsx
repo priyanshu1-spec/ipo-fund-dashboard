@@ -91,7 +91,7 @@ function LoginCard() {
       <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
         Forgot your password?{" "}
         <Link href="/forgot-password" className="font-medium text-brand-600 hover:underline">
-          Reset it by email
+          Answer your security question
         </Link>
         , or ask your admin to reset it for you from the Admin panel.
       </p>

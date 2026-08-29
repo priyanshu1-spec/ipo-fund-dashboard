@@ -14,6 +14,8 @@ export interface UserAccount {
   email: string;
   /** Optional alternate login handle — "" when not set, sign-in then falls back to email only. */
   username: string;
+  /** The question text only, "" when not set — safe to expose (the answer hash is not part of this type, see UserSecurityAuth in repositories/users.ts). */
+  securityQuestion: string;
   name: string;
   role: UserRole;
   status: UserAccountStatus;

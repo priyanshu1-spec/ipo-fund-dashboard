@@ -19,7 +19,6 @@ Vercel deploys from a git repo.
    | `NEXTAUTH_SECRET` | generate with `openssl rand -base64 32` |
    | `NEXTAUTH_URL` | leave blank for now — fill in after step 4 |
    | `CRON_SECRET` | any long random string |
-   | `RESEND_API_KEY` | optional but recommended — powers the self-service "forgot password" email; see §8 below |
 
 4. Click **Deploy**. You'll get a URL like `your-project.vercel.app`.
 5. Set `NEXTAUTH_URL` to that exact URL, then **redeploy** (Deployments →
@@ -101,24 +100,13 @@ redeploy.
 Your Postgres provider (Neon/Supabase/Vercel Postgres) also keeps its own
 automatic backups on the free tier.
 
-## 8. Forgot-password email (optional but recommended)
+## 8. Forgot-password
 
-Without this, "forgot password" still has two working paths (the admin
-resets anyone's password from `/admin`, and the shared password is always
-a login itself, not something to reset) — but the self-service "email me a
-code" flow at `/forgot-password` needs it configured, and returns a clear
-error rather than silently doing nothing if it isn't.
-
-1. Sign up free at [resend.com](https://resend.com) (no credit card;
-   100 emails/day, 3,000/month on the free tier).
-2. Dashboard → **API Keys** → create one → copy it.
-3. Set `RESEND_API_KEY` to that value in Vercel's Environment Variables,
-   redeploy.
-4. That's it — codes send immediately from Resend's own
-   `onboarding@resend.dev` address, no domain setup required. If you want
-   mail to appear to come from your own domain instead, verify it under
-   Resend's **Domains** tab, then set `RESEND_FROM_EMAIL` to
-   `"Your App <noreply@yourdomain.com>"` and redeploy.
+Self-service, at `/forgot-password` — needs no email service or extra
+setup at all. A user sets a security question (at `/register`, or later
+from My Account) and answers it to reset their own password. If they
+never set one, an admin resets it for them from `/admin`, and the shared
+password is always its own login rather than something to reset.
 
 ## Known residual `npm audit` findings
 

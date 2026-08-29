@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { KeyRound, Pencil, ShieldCheck, UserCircle } from "lucide-react";
+import { HelpCircle, KeyRound, Pencil, ShieldCheck, UserCircle } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
+import { SECURITY_QUESTION_CUSTOM, SECURITY_QUESTION_PRESETS } from "@/lib/securityQuestions";
 
 interface AccountResponse {
   bootstrap: boolean;
   name: string;
   username: string;
+  securityQuestion: string;
   role: string;
   email?: string;
   status?: string;
@@ -112,6 +114,141 @@ function EditableField({
         )}
       </dd>
     </>
+  );
+}
+
+function SecurityQuestionCard({
+  currentQuestion,
+  onSaved,
+}: {
+  currentQuestion: string;
+  onSaved: () => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [questionChoice, setQuestionChoice] = useState("");
+  const [customQuestion, setCustomQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const isPreset = (SECURITY_QUESTION_PRESETS as readonly string[]).includes(currentQuestion);
+  const question = questionChoice === SECURITY_QUESTION_CUSTOM ? customQuestion : questionChoice;
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!question.trim() || !answer.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiRequest("/api/account", "PATCH", { securityQuestion: question.trim(), securityAnswer: answer });
+      await onSaved();
+      setEditing(false);
+      setSaved(true);
+      setAnswer("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card mt-4 flex items-start gap-3">
+      <HelpCircle className="mt-0.5 shrink-0 text-amber-600" size={20} />
+      <div className="w-full text-sm text-slate-600 dark:text-slate-300">
+        <p className="mb-2 font-semibold text-slate-800 dark:text-slate-100">Security question</p>
+        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+          Used to reset your password without an admin, at{" "}
+          <a href="/forgot-password" className="text-brand-600 hover:underline">
+            /forgot-password
+          </a>
+          .
+        </p>
+        {!editing ? (
+          <div className="flex items-center gap-1.5">
+            {currentQuestion ? (
+              <span>{currentQuestion}</span>
+            ) : (
+              <span className="italic text-slate-400">Not set</span>
+            )}
+            <button
+              onClick={() => {
+                setQuestionChoice(isPreset ? currentQuestion : currentQuestion ? SECURITY_QUESTION_CUSTOM : "");
+                setCustomQuestion(isPreset ? "" : currentQuestion);
+                setEditing(true);
+                setSaved(false);
+              }}
+              title={currentQuestion ? "Change your security question" : "Set a security question"}
+              className="text-slate-400 hover:text-brand-600"
+            >
+              <Pencil size={12} />
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSave} className="space-y-2.5">
+            <div>
+              <label className="label">Question</label>
+              <select
+                className="input"
+                value={questionChoice}
+                onChange={(e) => setQuestionChoice(e.target.value)}
+              >
+                <option value="">Choose a question…</option>
+                {SECURITY_QUESTION_PRESETS.map((q) => (
+                  <option key={q} value={q}>
+                    {q}
+                  </option>
+                ))}
+                <option value={SECURITY_QUESTION_CUSTOM}>Write my own question…</option>
+              </select>
+            </div>
+            {questionChoice === SECURITY_QUESTION_CUSTOM && (
+              <input
+                type="text"
+                className="input"
+                value={customQuestion}
+                onChange={(e) => setCustomQuestion(e.target.value)}
+                placeholder="e.g. What street did you grow up on?"
+              />
+            )}
+            {questionChoice && (
+              <div>
+                <label className="label">Answer</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  placeholder={currentQuestion ? "Enter a new answer" : "Answer isn't case-sensitive"}
+                />
+              </div>
+            )}
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button type="submit" className="btn-primary px-3 py-1.5 text-xs" disabled={saving || !question || !answer}>
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary px-3 py-1.5 text-xs"
+                onClick={() => {
+                  setEditing(false);
+                  setError(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+        {saved && !editing && (
+          <p className="mt-1.5 flex items-center gap-1 text-xs text-emerald-600">
+            <ShieldCheck size={11} /> Saved.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -252,6 +389,10 @@ export default function AccountPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {data && !data.bootstrap && (
+        <SecurityQuestionCard currentQuestion={data.securityQuestion} onSaved={() => mutate()} />
       )}
 
       <p className="mt-4 text-xs text-slate-400">
