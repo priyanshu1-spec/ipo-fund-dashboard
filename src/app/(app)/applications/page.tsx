@@ -58,6 +58,7 @@ export default function ApplicationsPage() {
   const [form, setForm] = useState<Partial<ApplicationRow>>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     return applications.filter((a) => {
@@ -113,8 +114,13 @@ export default function ApplicationsPage() {
 
   async function handleDelete(app: ApplicationRow) {
     if (!confirm(`Delete application for "${app.ipoName}"?`)) return;
-    await apiRequest(`/api/applications/${app.id}`, "DELETE");
-    await mutate();
+    setDeleteError(null);
+    try {
+      await apiRequest(`/api/applications/${app.id}`, "DELETE");
+      await mutate();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete");
+    }
   }
 
   return (
@@ -130,6 +136,12 @@ export default function ApplicationsPage() {
           ) : undefined
         }
       />
+
+      {deleteError && (
+        <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          {deleteError}
+        </p>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <div className="relative">

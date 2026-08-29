@@ -103,11 +103,3 @@ export const authOptions: AuthOptions = {
     },
   },
 };
-
-export function canEdit(role: UserRole | undefined): boolean {
-  return role === "editor" || role === "admin";
-}
-
-export function isAdmin(role: UserRole | undefined): boolean {
-  return role === "admin";
-}

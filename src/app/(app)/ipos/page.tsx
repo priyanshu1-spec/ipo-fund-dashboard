@@ -70,6 +70,7 @@ export default function IposPage() {
   const [form, setForm] = useState<Partial<IpoRow>>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [historyIpo, setHistoryIpo] = useState<IpoRow | null>(null);
 
@@ -125,8 +126,13 @@ export default function IposPage() {
 
   async function handleDelete(ipo: IpoRow) {
     if (!confirm(`Delete "${ipo.name}"? This cannot be undone.`)) return;
-    await apiRequest(`/api/ipos/${ipo.id}`, "DELETE");
-    await mutate();
+    setDeleteError(null);
+    try {
+      await apiRequest(`/api/ipos/${ipo.id}`, "DELETE");
+      await mutate();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete");
+    }
   }
 
   async function handleRefresh() {
@@ -175,6 +181,12 @@ export default function IposPage() {
           GMP is always unofficial / market-indicative
         </span>
       </div>
+
+      {deleteError && (
+        <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          {deleteError}
+        </p>
+      )}
 
       {refreshResult && (
         <div className="card mb-4 text-sm text-slate-600 dark:text-slate-300">
@@ -231,7 +243,7 @@ export default function IposPage() {
               <th className="th">Status</th>
               <th className="th">GMP</th>
               <th className="th">Source</th>
-              <th className="th">Actions</th>
+              {(canEdit || canDelete) && <th className="th">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -289,20 +301,22 @@ export default function IposPage() {
                     {ipo.dataSource}
                   </span>
                 </td>
-                <td className="td">
-                  <div className="flex gap-2">
-                    {canEdit && (
-                      <button onClick={() => openEdit(ipo)} className="text-slate-400 hover:text-brand-600">
-                        <Pencil size={15} />
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button onClick={() => handleDelete(ipo)} className="text-slate-400 hover:text-red-600">
-                        <Trash2 size={15} />
-                      </button>
-                    )}
-                  </div>
-                </td>
+                {(canEdit || canDelete) && (
+                  <td className="td">
+                    <div className="flex gap-2">
+                      {canEdit && (
+                        <button onClick={() => openEdit(ipo)} className="text-slate-400 hover:text-brand-600">
+                          <Pencil size={15} />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => handleDelete(ipo)} className="text-slate-400 hover:text-red-600">
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -169,9 +169,11 @@ function FetchLogSection() {
                 </td>
                 <td
                   className={`td max-w-xs text-xs ${
-                    l.success && l.errorMessage.startsWith("timing:")
-                      ? "text-slate-400 dark:text-slate-500"
-                      : "text-red-600"
+                    // A successful run's notes (warnings + the always-appended
+                    // timing suffix) are informational, not an error — red text
+                    // next to a green "success" badge reads as contradictory.
+                    // Only an actually-failed run gets the red treatment.
+                    l.success ? "text-slate-400 dark:text-slate-500" : "text-red-600"
                   }`}
                 >
                   {l.errorMessage ? (

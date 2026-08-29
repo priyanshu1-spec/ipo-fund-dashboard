@@ -46,6 +46,7 @@ export default function FundsPage() {
   const [form, setForm] = useState<Partial<FundAllocationRow>>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     return funds.filter((f) => {
@@ -98,8 +99,13 @@ export default function FundsPage() {
 
   async function handleDelete(f: FundAllocationRow) {
     if (!confirm(`Delete this fund allocation for "${f.ipoName}"?`)) return;
-    await apiRequest(`/api/funds/${f.id}`, "DELETE");
-    await mutate();
+    setDeleteError(null);
+    try {
+      await apiRequest(`/api/funds/${f.id}`, "DELETE");
+      await mutate();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete");
+    }
   }
 
   return (
@@ -115,6 +121,12 @@ export default function FundsPage() {
           ) : undefined
         }
       />
+
+      {deleteError && (
+        <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          {deleteError}
+        </p>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <div className="relative">

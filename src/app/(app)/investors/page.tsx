@@ -43,6 +43,7 @@ export default function InvestorsPage() {
   const [form, setForm] = useState<Partial<InvestorRow>>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const filtered = investors.filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -81,8 +82,13 @@ export default function InvestorsPage() {
 
   async function handleDelete(inv: InvestorRow) {
     if (!confirm(`Delete investor "${inv.name}"? Existing applications/funds referencing them will keep their name but lose the link.`)) return;
-    await apiRequest(`/api/investors/${inv.id}`, "DELETE");
-    await mutate();
+    setDeleteError(null);
+    try {
+      await apiRequest(`/api/investors/${inv.id}`, "DELETE");
+      await mutate();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete");
+    }
   }
 
   return (
@@ -98,6 +104,12 @@ export default function InvestorsPage() {
           ) : undefined
         }
       />
+
+      {deleteError && (
+        <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          {deleteError}
+        </p>
+      )}
 
       <div className="mb-4 relative w-64">
         <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
