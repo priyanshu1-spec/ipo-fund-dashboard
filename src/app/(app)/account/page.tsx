@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { KeyRound, Pencil, ShieldCheck, UserCircle } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 interface AccountResponse {
   bootstrap: boolean;
   name: string;
+  username: string;
   role: string;
   email?: string;
   status?: string;
@@ -16,36 +17,106 @@ interface AccountResponse {
   lastActiveAt?: string;
 }
 
-export default function AccountPage() {
-  const { data, mutate, isLoading } = useSWR<AccountResponse>("/api/account", fetcher);
+/**
+ * One editable field on the Account details list — pencil turns it into an
+ * input + Save/Cancel. Shared by Name and Username so neither duplicates
+ * the same open/save/error state machine.
+ */
+function EditableField({
+  label,
+  value,
+  placeholder,
+  field,
+  onSaved,
+  emptyText,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  field: "name" | "username";
+  onSaved: () => Promise<unknown>;
+  /** Shown instead of a blank value when unset — only makes sense for username, which is optional. */
+  emptyText?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState("");
-  const [nameSaving, setNameSaving] = useState(false);
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [nameSaved, setNameSaved] = useState(false);
-
-  useEffect(() => {
-    if (data && !data.bootstrap) setNameInput(data.name);
-  }, [data]);
-
-  async function handleSaveName(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = nameInput.trim();
-    if (!trimmed) return;
-    setNameSaving(true);
-    setNameError(null);
+    const trimmed = input.trim();
+    if (field === "name" && !trimmed) return;
+    setSaving(true);
+    setError(null);
     try {
-      await apiRequest("/api/account", "PATCH", { name: trimmed });
-      await mutate();
-      setEditingName(false);
-      setNameSaved(true);
+      await apiRequest("/api/account", "PATCH", { [field]: trimmed });
+      await onSaved();
+      setEditing(false);
+      setSaved(true);
     } catch (err) {
-      setNameError(err instanceof Error ? err.message : "Failed to update name");
+      setError(err instanceof Error ? err.message : `Failed to update ${label.toLowerCase()}`);
     } finally {
-      setNameSaving(false);
+      setSaving(false);
     }
   }
+
+  return (
+    <>
+      <dt className="text-slate-400">{label}</dt>
+      <dd>
+        {editing ? (
+          <form onSubmit={handleSave} className="flex items-center gap-1.5">
+            <input
+              className="input py-1 text-sm"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={placeholder}
+              autoFocus
+              maxLength={field === "name" ? 200 : 30}
+            />
+            <button type="submit" className="btn-primary px-2 py-1 text-xs" disabled={saving}>
+              {saving ? "…" : "Save"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary px-2 py-1 text-xs"
+              onClick={() => {
+                setEditing(false);
+                setInput(value);
+                setError(null);
+              }}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            {value || <span className="italic text-slate-400">{emptyText ?? "—"}</span>}
+            <button
+              onClick={() => setEditing(true)}
+              title={`Edit your ${label.toLowerCase()}`}
+              className="text-slate-400 hover:text-brand-600"
+            >
+              <Pencil size={12} />
+            </button>
+          </span>
+        )}
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+        {saved && !editing && (
+          <p className="mt-1 flex items-center gap-1 text-xs text-emerald-600">
+            <ShieldCheck size={11} /> Saved — sign out and back in to see it update everywhere (sidebar,
+            admin panel).
+          </p>
+        )}
+      </dd>
+    </>
+  );
+}
+
+export default function AccountPage() {
+  const { data, mutate, isLoading } = useSWR<AccountResponse>("/api/account", fetcher);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -96,56 +167,19 @@ export default function AccountPage() {
                   instead of &quot;{data.name}&quot;? Set <code>APP_ACCESS_NAME</code> (or{" "}
                   <code>APP_VIEWER_NAME</code> for the view-only login) in Vercel and redeploy — or, better,
                   register a real personal account at <code>/register</code> so you get your own name,
-                  password, and this page&apos;s full details.
+                  username, password, and this page&apos;s full details.
                 </p>
               ) : (
                 <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1.5">
-                  <dt className="text-slate-400">Name</dt>
-                  <dd>
-                    {editingName ? (
-                      <form onSubmit={handleSaveName} className="flex items-center gap-1.5">
-                        <input
-                          className="input py-1 text-sm"
-                          value={nameInput}
-                          onChange={(e) => setNameInput(e.target.value)}
-                          autoFocus
-                          maxLength={200}
-                        />
-                        <button type="submit" className="btn-primary px-2 py-1 text-xs" disabled={nameSaving}>
-                          {nameSaving ? "…" : "Save"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary px-2 py-1 text-xs"
-                          onClick={() => {
-                            setEditingName(false);
-                            setNameInput(data.name);
-                            setNameError(null);
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="flex items-center gap-1.5">
-                        {data.name}
-                        <button
-                          onClick={() => setEditingName(true)}
-                          title="Edit your display name"
-                          className="text-slate-400 hover:text-brand-600"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                      </span>
-                    )}
-                    {nameError && <p className="mt-1 text-xs text-red-600">{nameError}</p>}
-                    {nameSaved && !editingName && (
-                      <p className="mt-1 flex items-center gap-1 text-xs text-emerald-600">
-                        <ShieldCheck size={11} /> Saved — sign out and back in to see it update everywhere
-                        (sidebar, admin panel).
-                      </p>
-                    )}
-                  </dd>
+                  <EditableField label="Name" value={data.name} field="name" onSaved={() => mutate()} />
+                  <EditableField
+                    label="Username"
+                    value={data.username}
+                    field="username"
+                    placeholder="letters, numbers, underscore"
+                    emptyText="Not set — sign in with email only"
+                    onSaved={() => mutate()}
+                  />
                   <dt className="text-slate-400">Email</dt>
                   <dd>{data.email}</dd>
                   <dt className="text-slate-400">Role</dt>

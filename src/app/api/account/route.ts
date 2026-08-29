@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
-import { getUserAuthById, setUserName, setUserPasswordHash } from "@/lib/repositories/users";
+import {
+  getUserAuthById,
+  getUserByUsername,
+  setUserName,
+  setUserPasswordHash,
+  setUserUsername,
+} from "@/lib/repositories/users";
 
 /**
  * "My Account" — a logged-in user's own details and self-service password
@@ -35,13 +41,20 @@ export async function GET() {
   return NextResponse.json({ bootstrap: false, ...safe });
 }
 
-// name and the password-change pair are independent — a request can carry
-// either, or both, at once. Changing the password still requires the
-// current one; changing just the display name does not (it's not a
-// security-sensitive value).
+// name, username, and the password-change pair are all independent — a
+// request can carry any combination. Changing the password still requires
+// the current one; changing the name/username does not (neither is
+// security-sensitive).
 const patchSchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
+    // "" explicitly clears a previously-set username back to unset.
+    username: z
+      .string()
+      .trim()
+      .regex(/^[a-zA-Z0-9_]{3,30}$/, "Username must be 3-30 letters, numbers, or underscores")
+      .or(z.literal(""))
+      .optional(),
     currentPassword: z.string().optional(),
     newPassword: z.string().min(8, "New password must be at least 8 characters").optional(),
   })
@@ -66,7 +79,7 @@ export async function PATCH(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  if (!parsed.data.name && !parsed.data.newPassword) {
+  if (!parsed.data.name && parsed.data.username == null && !parsed.data.newPassword) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
@@ -75,6 +88,16 @@ export async function PATCH(req: Request) {
 
   if (parsed.data.name) {
     await setUserName(auth.userId, parsed.data.name);
+  }
+
+  if (parsed.data.username != null) {
+    if (parsed.data.username) {
+      const existing = await getUserByUsername(parsed.data.username);
+      if (existing && existing.id !== auth.userId) {
+        return NextResponse.json({ error: "That username is already taken." }, { status: 400 });
+      }
+    }
+    await setUserUsername(auth.userId, parsed.data.username);
   }
 
   if (parsed.data.newPassword) {

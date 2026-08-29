@@ -6,6 +6,7 @@ function toUser(r: Record<string, unknown>): UserAccount {
   return {
     id: String(r.id ?? ""),
     email: String(r.email ?? ""),
+    username: String(r.username ?? ""),
     name: String(r.name ?? ""),
     role: (r.role as UserRole) || "viewer",
     status: (r.status as UserAccountStatus) || "pending",
@@ -34,12 +35,29 @@ export async function getUserByEmail(email: string): Promise<UserAccount | undef
   return rows[0] ? toUser(rows[0]) : undefined;
 }
 
+/** Used only to check uniqueness before setting/changing a username (registration, self-service edit) — never for login (see getUserAuthByUsername for that). */
+export async function getUserByUsername(username: string): Promise<UserAccount | undefined> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM users WHERE lower(username) = ${username.toLowerCase()}`;
+  return rows[0] ? toUser(rows[0]) : undefined;
+}
+
 /** Internal — includes the password hash, needed only by the login check. Never return this to the client. */
 export async function getUserAuthByEmail(
   email: string
 ): Promise<(UserAccount & { passwordHash: string }) | undefined> {
   await ensureSchema();
   const { rows } = await sql`SELECT * FROM users WHERE lower(email) = ${email.toLowerCase()}`;
+  if (!rows[0]) return undefined;
+  return { ...toUser(rows[0]), passwordHash: String(rows[0].password_hash ?? "") };
+}
+
+/** Same as getUserAuthByEmail but by username — the sign-in form accepts either; auth.ts picks this one when the entered value doesn't look like an email (no "@"). Never return this to the client. */
+export async function getUserAuthByUsername(
+  username: string
+): Promise<(UserAccount & { passwordHash: string }) | undefined> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM users WHERE lower(username) = ${username.toLowerCase()}`;
   if (!rows[0]) return undefined;
   return { ...toUser(rows[0]), passwordHash: String(rows[0].password_hash ?? "") };
 }
@@ -76,19 +94,27 @@ export async function createUser(input: {
   email: string;
   passwordHash: string;
   name: string;
+  /** Optional — an alternate login handle alongside email. Omit or leave blank if not wanted. */
+  username?: string;
 }): Promise<UserAccount> {
   await ensureSchema();
   const existing = await getUserByEmail(input.email);
   if (existing) throw new Error("An account with that email already exists.");
+  const username = input.username?.trim() || "";
+  if (username) {
+    const existingUsername = await getUserByUsername(username);
+    if (existingUsername) throw new Error("That username is already taken.");
+  }
   const id = generateId("user");
   const now = new Date().toISOString();
   await sql`
-    INSERT INTO users (id, email, password_hash, name, role, status, created_at, approved_at, approved_by, last_active_at)
-    VALUES (${id}, ${input.email.toLowerCase()}, ${input.passwordHash}, ${input.name}, 'viewer', 'pending', ${now}, '', '', '')
+    INSERT INTO users (id, email, username, password_hash, name, role, status, created_at, approved_at, approved_by, last_active_at)
+    VALUES (${id}, ${input.email.toLowerCase()}, ${username || null}, ${input.passwordHash}, ${input.name}, 'viewer', 'pending', ${now}, '', '', '')
   `;
   return {
     id,
     email: input.email.toLowerCase(),
+    username,
     name: input.name,
     role: "viewer",
     status: "pending",
@@ -118,6 +144,14 @@ export async function setUserStatus(
 export async function setUserName(id: string, name: string): Promise<UserAccount> {
   await ensureSchema();
   const { rows } = await sql`UPDATE users SET name = ${name} WHERE id = ${id} RETURNING *`;
+  if (!rows[0]) throw new Error(`User ${id} not found`);
+  return toUser(rows[0]);
+}
+
+/** Pass "" to clear a username back to unset. Caller (the API route) is responsible for the uniqueness check via getUserByUsername first — this just writes. */
+export async function setUserUsername(id: string, username: string): Promise<UserAccount> {
+  await ensureSchema();
+  const { rows } = await sql`UPDATE users SET username = ${username || null} WHERE id = ${id} RETURNING *`;
   if (!rows[0]) throw new Error(`User ${id} not found`);
   return toUser(rows[0]);
 }

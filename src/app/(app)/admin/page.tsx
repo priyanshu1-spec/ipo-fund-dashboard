@@ -131,7 +131,10 @@ function UsersSection({ selfId }: { selfId?: string }) {
             {users.map((u) => (
               <tr key={u.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="td font-medium">{u.name}</td>
-                <td className="td">{u.email}</td>
+                <td className="td">
+                  {u.email}
+                  {u.username && <p className="text-xs text-slate-400">@{u.username}</p>}
+                </td>
                 <td className="td">
                   <select
                     className="input py-1 text-xs"

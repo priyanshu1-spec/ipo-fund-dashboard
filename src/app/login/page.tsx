@@ -27,7 +27,7 @@ function LoginCard() {
     if (result?.error) {
       setError(
         email
-          ? "Wrong email/password, or your account hasn't been approved by an admin yet."
+          ? "Wrong email/username or password, or your account hasn't been approved by an admin yet."
           : "Wrong password. Ask whoever gave you access to double-check it."
       );
       return;
@@ -49,14 +49,14 @@ function LoginCard() {
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-3 text-left">
         <div>
-          <label className="label">Email (leave blank if you were given a shared password)</label>
+          <label className="label">Email or Username (leave blank if you were given a shared password)</label>
           <input
-            type="email"
+            type="text"
             className="input"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
+            placeholder="you@example.com or your username"
+            autoComplete="username"
           />
         </div>
         <div>

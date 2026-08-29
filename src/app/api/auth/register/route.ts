@@ -7,6 +7,15 @@ const registerSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  // Optional alternate login handle — letters/digits/underscore only, so it
+  // can never look like an email (which is how auth.ts tells the two apart
+  // at sign-in) and never collides with special characters in URLs, etc.
+  username: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_]{3,30}$/, "Username must be 3-30 letters, numbers, or underscores")
+    .optional()
+    .or(z.literal("")),
 });
 
 /** Public — anyone can request an account. It's created with status "pending" and grants no access until an admin approves it in /admin. */
@@ -22,6 +31,7 @@ export async function POST(req: Request) {
       email: parsed.data.email,
       passwordHash,
       name: parsed.data.name,
+      username: parsed.data.username,
     });
     return NextResponse.json(
       { user: { id: user.id, email: user.email, name: user.name, status: user.status } },

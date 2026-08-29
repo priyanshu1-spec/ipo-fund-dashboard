@@ -12,6 +12,8 @@ export type UserAccountStatus = "pending" | "approved" | "rejected" | "disabled"
 export interface UserAccount {
   id: string;
   email: string;
+  /** Optional alternate login handle — "" when not set, sign-in then falls back to email only. */
+  username: string;
   name: string;
   role: UserRole;
   status: UserAccountStatus;

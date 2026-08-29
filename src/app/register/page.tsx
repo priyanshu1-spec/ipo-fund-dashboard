@@ -8,6 +8,7 @@ import { apiRequest } from "@/lib/fetcher";
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -18,7 +19,7 @@ export default function RegisterPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await apiRequest("/api/auth/register", "POST", { name, email, password });
+      await apiRequest("/api/auth/register", "POST", { name, email, username, password });
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -73,6 +74,19 @@ export default function RegisterPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
+                />
+              </div>
+              <div>
+                <label className="label">Username (optional — lets you sign in without your email)</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="letters, numbers, underscore — 3-30 characters"
+                  autoComplete="username"
+                  pattern="[a-zA-Z0-9_]{3,30}"
+                  title="3-30 letters, numbers, or underscores"
                 />
               </div>
               <div>

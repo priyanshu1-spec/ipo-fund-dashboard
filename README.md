@@ -65,7 +65,10 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
 - **Excel export** — full server-side backup on demand.
 - **Real per-person accounts with strict data isolation** — sign up at
   `/register`, an admin approves and assigns a role (viewer/editor/admin)
-  from the `/admin` panel. Every `viewer`/`editor` only ever sees, edits, or
+  from the `/admin` panel. Sign-in accepts either your email **or** an
+  optional username (set at registration or later from My Account) — the
+  login page's one field tells them apart by whether it contains an "@".
+  Every `viewer`/`editor` only ever sees, edits, or
   deletes their **own** Applications/Funds/Investors — enforced in SQL on
   every query, never just hidden in the UI. Only `admin` sees everyone's
   data. Suspending, deleting, or re-roling an account takes effect on that

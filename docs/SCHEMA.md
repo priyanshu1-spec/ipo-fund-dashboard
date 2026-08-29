@@ -103,6 +103,7 @@ still fully visible and editable by any `admin`, just invisible to
 |---|---|
 | id | `user_xxxxxxxx` |
 | email | unique, case-insensitive |
+| username | optional, unique when set (case-insensitive, partial index so blank never collides) — an alternate sign-in handle alongside email, set at registration or later from My Account |
 | password_hash | bcrypt |
 | name | |
 | role | `viewer` \| `editor` \| `admin` — set by an admin, defaults to `viewer` at signup |

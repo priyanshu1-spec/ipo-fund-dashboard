@@ -242,6 +242,12 @@ const SCHEMA_SQL = `
     );
     -- Migration for a table created before last_active_at existed.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TEXT NOT NULL DEFAULT '';
+    -- Optional alternate login handle alongside email — nullable (not every
+    -- account sets one), case-insensitively unique only where actually set,
+    -- so it can't collide but leaving it blank never does either.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower
+      ON users (lower(username)) WHERE username IS NOT NULL AND username <> '';
 
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
