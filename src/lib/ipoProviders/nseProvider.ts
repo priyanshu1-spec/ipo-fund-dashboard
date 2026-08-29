@@ -25,10 +25,16 @@
 // size at all, under any name — captured raw NSE JSON for several live
 // rows shows only companyName, issueEndDate, issuePrice, issueSize,
 // issueStartDate, series, status, symbol. No amount of key-list tuning
-// fixes this; the field isn't in the payload NSE sends here. Same likely
-// applies to allotment/listing dates, though that's less certain — the
-// diagnostic in fetch() below still captures a raw row whenever lot size
-// comes back empty, in case NSE ever adds the field to this endpoint.
+// fixes this; the field isn't in the payload NSE sends here. Lot size DOES
+// show up for some rows in production despite that, which only makes
+// sense if a later NSE response shape started including it under one of
+// the keys already tried (marketLot etc.) for issues past a certain stage
+// — this endpoint's shape isn't static across an IPO's own lifecycle.
+// Allotment/listing dates are a live open question, not a confirmed gap:
+// the diagnostic in fetch() below now captures a raw row whenever BOTH are
+// missing, the same way the lot-size one already worked — so the next
+// real refresh's fetch-log warning either shows the actual field name to
+// add to the key lists below, or proves NSE genuinely omits them here too.
 //
 // If NSE changes this endpoint's shape or blocks it outright, this provider
 // simply returns zero rows + a warning — it never falls back to scraping a
@@ -117,6 +123,8 @@ interface NormalizedRowResult {
   ipo?: NormalizedIpo;
   /** Populated only when lot size came back empty — the row's actual raw keys+values, so a fetch-log warning can show definitively whether NSE has this field under a different name or genuinely omits it for this row, instead of guessing at key names a third time. */
   lotSizeDiagnostic?: string;
+  /** Populated when BOTH allotment and listing dates come back empty for a row. Real IPO prospectuses declare a full tentative timeline (open/close/allotment/listing) upfront, so — unlike lot size, which can be legitimately undetermined pre-open — there's no status where these being missing is obviously expected; worth capturing across every row to see NSE's actual raw shape, same reasoning that already turned up lot size in some rows despite an earlier "confirmed absent" read that turned out incomplete. */
+  dateDiagnostic?: string;
 }
 
 function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRowResult {
@@ -126,6 +134,10 @@ function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRo
   const priceBand = parsePriceBand(pick(row, ["issuePrice", "priceRange", "issuePriceRange"]));
   const status = parseStatus(pick(row, ["status", "issueStatus"]));
   const lotSize = parseNum(pick(row, ["marketLot", "lotSize", "minLot", "minOrderQuantity", "minBidQuantity"]));
+  const allotmentDate = parseDate(
+    pick(row, ["allotmentDate", "basisOfAllotmentDate", "tentativeAllotmentDate", "allotmentFinalisationDate"])
+  );
+  const listingDate = parseDate(pick(row, ["listingDate", "tentativeListingDate", "listingOn", "listedDate"]));
 
   const ipo: NormalizedIpo = {
     name,
@@ -134,10 +146,8 @@ function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRo
     issueType: pick(row, ["issueType", "typeOfIssue"]) || undefined,
     openDate: parseDate(pick(row, ["issueStartDate", "startDate", "biddingStartDate"])),
     closeDate: parseDate(pick(row, ["issueEndDate", "endDate", "biddingEndDate"])),
-    allotmentDate: parseDate(
-      pick(row, ["allotmentDate", "basisOfAllotmentDate", "tentativeAllotmentDate", "allotmentFinalisationDate"])
-    ),
-    listingDate: parseDate(pick(row, ["listingDate", "tentativeListingDate", "listingOn", "listedDate"])),
+    allotmentDate,
+    listingDate,
     priceBandMin: priceBand.min,
     priceBandMax: priceBand.max,
     faceValue: parseNum(pick(row, ["faceValue", "face_value"])),
@@ -154,6 +164,8 @@ function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRo
   return {
     ipo,
     lotSizeDiagnostic: lotSize == null ? `${name}: ${JSON.stringify(row)}` : undefined,
+    dateDiagnostic:
+      allotmentDate == null && listingDate == null ? `${name} (${status ?? "?"}): ${JSON.stringify(row)}` : undefined,
   };
 }
 
@@ -191,12 +203,14 @@ export const nseProvider: IpoDataProvider = {
 
     const ipos: NormalizedIpo[] = [];
     const lotSizeDiagnostics: string[] = [];
+    const dateDiagnostics: string[] = [];
     function collect(rows: Record<string, unknown>[], type: IpoType) {
       for (const row of rows) {
-        const { ipo, lotSizeDiagnostic } = normalizeRow(row, type);
+        const { ipo, lotSizeDiagnostic, dateDiagnostic } = normalizeRow(row, type);
         if (ipo) ipos.push(ipo);
         else warnings.push(`Skipped one NSE ${type} row with no recognizable company name field`);
         if (lotSizeDiagnostic && lotSizeDiagnostics.length < 2) lotSizeDiagnostics.push(lotSizeDiagnostic);
+        if (dateDiagnostic && dateDiagnostics.length < 2) dateDiagnostics.push(dateDiagnostic);
       }
     }
     collect(mainboard.rows, "Mainboard");
@@ -211,6 +225,17 @@ export const nseProvider: IpoDataProvider = {
       // the key list) or is genuinely absent from NSE's data for that
       // row (not fixable here) can be told apart with certainty.
       warnings.push(`Lot size missing — raw NSE row(s) for diagnosis: ${JSON.stringify(lotSizeDiagnostics)}`);
+    }
+
+    if (dateDiagnostics.length > 0) {
+      // Same reasoning, for allotment/listing date — see the dateDiagnostic
+      // doc comment on normalizeRow(). This is what will tell us, from a
+      // real refresh, whether NSE has these fields under a different name
+      // (fix the key list in normalizeRow) or genuinely never sends them
+      // on this endpoint (not fixable here — falls back to manual entry).
+      warnings.push(
+        `Allotment/listing date missing — raw NSE row(s) for diagnosis: ${JSON.stringify(dateDiagnostics)}`
+      );
     }
 
     if (ipos.length === 0) {
