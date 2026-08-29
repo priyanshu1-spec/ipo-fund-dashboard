@@ -35,10 +35,11 @@ export async function GET() {
     return NextResponse.json({ bootstrap: true, name: auth.actor, role: auth.role });
   }
 
-  const user = await getUserAuthById(auth.userId);
-  if (!user) return NextResponse.json({ error: "Account not found" }, { status: 404 });
-  const { passwordHash: _passwordHash, ...safe } = user;
-  return NextResponse.json({ bootstrap: false, ...safe });
+  // requireApiAuth() already fetched this exact row (to check status/role)
+  // — reusing it here instead of querying again cuts this route from two
+  // DB round trips to one; each opens its own fresh Postgres connection
+  // (see db.ts), so this was real, measurable latency on every load.
+  return NextResponse.json({ bootstrap: false, ...auth.user });
 }
 
 // name, username, and the password-change pair are all independent — a
@@ -82,9 +83,10 @@ export async function PATCH(req: Request) {
   if (!parsed.data.name && parsed.data.username == null && !parsed.data.newPassword) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
-
-  const user = await getUserAuthById(auth.userId);
-  if (!user) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  // requireApiAuth() already confirmed this account exists and is approved
+  // (a stale/deleted account gets 401'd before this handler even runs), so
+  // there's no need to re-fetch it here just to check existence — only the
+  // password-change path below needs its own fetch, for the password hash.
 
   if (parsed.data.name) {
     await setUserName(auth.userId, parsed.data.name);
@@ -101,6 +103,8 @@ export async function PATCH(req: Request) {
   }
 
   if (parsed.data.newPassword) {
+    const user = await getUserAuthById(auth.userId);
+    if (!user) return NextResponse.json({ error: "Account not found" }, { status: 404 });
     const valid = await bcrypt.compare(parsed.data.currentPassword!, user.passwordHash);
     if (!valid) {
       return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });

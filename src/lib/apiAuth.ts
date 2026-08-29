@@ -2,7 +2,7 @@ import { getServerSession, type Session } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { touchAndValidate } from "@/lib/repositories/users";
-import type { UserRole } from "@/types";
+import type { UserAccount, UserRole } from "@/types";
 
 export interface AuthedContext {
   session: Session;
@@ -11,6 +11,17 @@ export interface AuthedContext {
   actor: string;
   /** Stable id for the activity log and row-level scoping — the DB user id for a real account, or a fixed "bootstrap-admin"/"bootstrap-viewer" for the legacy shared-password path. */
   userId: string;
+  /**
+   * The full row touchAndValidate() already fetched for a real account (undefined
+   * for the bootstrap logins, which have no row). Every route in this app was
+   * re-fetching the same user by id right after calling requireApiAuth() —
+   * db.ts opens a fresh Postgres connection per query, so that's a full extra
+   * round trip for data already sitting in memory. Reuse this instead of
+   * calling getUserById/getUserAuthById again for "the current caller's own
+   * row" (a route touching a *different* user, e.g. admin/users/[id], still
+   * needs its own fetch).
+   */
+  user?: UserAccount;
 }
 
 const RANK: Record<UserRole, number> = { viewer: 0, editor: 1, admin: 2 };
@@ -42,18 +53,20 @@ export async function requireApiAuth(minRole?: UserRole): Promise<AuthedContext 
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  let user: UserAccount | undefined;
   if (!isBootstrapId(userId)) {
     const current = await touchAndValidate(userId);
     if (!current || current.status !== "approved") {
       return NextResponse.json({ error: "Account no longer active" }, { status: 401 });
     }
     role = current.role;
+    user = current;
   }
 
   if (minRole && RANK[role] < RANK[minRole]) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
-  return { session, role, actor: session.user?.name || role, userId };
+  return { session, role, actor: session.user?.name || role, userId, user };
 }
 
 /**
