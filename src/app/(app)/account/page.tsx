@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { KeyRound, ShieldCheck, UserCircle } from "lucide-react";
+import { KeyRound, Pencil, ShieldCheck, UserCircle } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 
@@ -17,7 +17,35 @@ interface AccountResponse {
 }
 
 export default function AccountPage() {
-  const { data, isLoading } = useSWR<AccountResponse>("/api/account", fetcher);
+  const { data, mutate, isLoading } = useSWR<AccountResponse>("/api/account", fetcher);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameSaved, setNameSaved] = useState(false);
+
+  useEffect(() => {
+    if (data && !data.bootstrap) setNameInput(data.name);
+  }, [data]);
+
+  async function handleSaveName(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setNameSaving(true);
+    setNameError(null);
+    try {
+      await apiRequest("/api/account", "PATCH", { name: trimmed });
+      await mutate();
+      setEditingName(false);
+      setNameSaved(true);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : "Failed to update name");
+    } finally {
+      setNameSaving(false);
+    }
+  }
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -64,12 +92,60 @@ export default function AccountPage() {
                 <p>
                   You&apos;re signed in with the <strong>shared access password</strong> ({data.role}), not
                   a personal account — there are no personal details to show, and this login&apos;s
-                  password is set in Vercel&apos;s environment variables, not here.
+                  password is set in Vercel&apos;s environment variables, not here. Want a custom name
+                  instead of &quot;{data.name}&quot;? Set <code>APP_ACCESS_NAME</code> (or{" "}
+                  <code>APP_VIEWER_NAME</code> for the view-only login) in Vercel and redeploy — or, better,
+                  register a real personal account at <code>/register</code> so you get your own name,
+                  password, and this page&apos;s full details.
                 </p>
               ) : (
                 <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1.5">
                   <dt className="text-slate-400">Name</dt>
-                  <dd>{data.name}</dd>
+                  <dd>
+                    {editingName ? (
+                      <form onSubmit={handleSaveName} className="flex items-center gap-1.5">
+                        <input
+                          className="input py-1 text-sm"
+                          value={nameInput}
+                          onChange={(e) => setNameInput(e.target.value)}
+                          autoFocus
+                          maxLength={200}
+                        />
+                        <button type="submit" className="btn-primary px-2 py-1 text-xs" disabled={nameSaving}>
+                          {nameSaving ? "…" : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary px-2 py-1 text-xs"
+                          onClick={() => {
+                            setEditingName(false);
+                            setNameInput(data.name);
+                            setNameError(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        {data.name}
+                        <button
+                          onClick={() => setEditingName(true)}
+                          title="Edit your display name"
+                          className="text-slate-400 hover:text-brand-600"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      </span>
+                    )}
+                    {nameError && <p className="mt-1 text-xs text-red-600">{nameError}</p>}
+                    {nameSaved && !editingName && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-emerald-600">
+                        <ShieldCheck size={11} /> Saved — sign out and back in to see it update everywhere
+                        (sidebar, admin panel).
+                      </p>
+                    )}
+                  </dd>
                   <dt className="text-slate-400">Email</dt>
                   <dd>{data.email}</dd>
                   <dt className="text-slate-400">Role</dt>

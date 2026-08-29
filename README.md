@@ -79,13 +79,20 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   activity log of every create/update/delete across IPOs, applications,
   funds, and investors.
 - **My Account** (`/account`) — every signed-in user (any role) can see
-  their own name, email, role, status, and last-active time, and change
-  their own password (current password required). There's no automatic
-  "forgot password" email flow (that needs a third-party email-sending
-  service, which isn't set up) — if you can't sign in at all, an admin
-  resets your password for you from the Admin panel above; the shared
-  bootstrap password remains the ultimate recovery path for the admin
-  themselves if their own account is ever locked out.
+  their own name, email, role, status, and last-active time; edit their
+  own display name; and change their own password (current password
+  required). There's no automatic "forgot password" email flow (that needs
+  a third-party email-sending service, which isn't set up) — if you can't
+  sign in at all, an admin resets your password for you from the Admin
+  panel above; the shared bootstrap password remains the ultimate recovery
+  path for the admin themselves if their own account is ever locked out.
+  The shared bootstrap login(s) have no personal name/password to manage
+  here (nothing is stored in the database for them) — optionally set
+  `APP_ACCESS_NAME` / `APP_VIEWER_NAME` in Vercel to give them a display
+  name of your choosing instead of the generic default. A display-name
+  change (real account or env var) only shows up after signing out and
+  back in — same session-token reason role changes need a fresh login,
+  see RBAC note below.
 
 ## Automated IPO data fetching — how and what's realistic
 

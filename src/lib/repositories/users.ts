@@ -115,6 +115,13 @@ export async function setUserStatus(
   return toUser(rows[0]);
 }
 
+export async function setUserName(id: string, name: string): Promise<UserAccount> {
+  await ensureSchema();
+  const { rows } = await sql`UPDATE users SET name = ${name} WHERE id = ${id} RETURNING *`;
+  if (!rows[0]) throw new Error(`User ${id} not found`);
+  return toUser(rows[0]);
+}
+
 export async function setUserRole(id: string, role: UserRole): Promise<UserAccount> {
   await ensureSchema();
   const { rows } = await sql`UPDATE users SET role = ${role} WHERE id = ${id} RETURNING *`;

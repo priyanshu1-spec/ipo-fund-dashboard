@@ -38,10 +38,21 @@ export const authOptions: AuthOptions = {
             throw new Error("APP_ACCESS_PASSWORD is not configured on the server. See docs/DEPLOYMENT.md.");
           }
           if (password === editorPassword) {
-            return { id: "bootstrap-admin", name: "Full access (shared password)", role: "admin" as UserRole };
+            // APP_ACCESS_NAME is optional — lets whoever uses this shared login
+            // see a name they picked (e.g. "Rishi") in the sidebar instead of
+            // the generic default. Purely cosmetic, no effect on access.
+            return {
+              id: "bootstrap-admin",
+              name: process.env.APP_ACCESS_NAME || "Full access (shared password)",
+              role: "admin" as UserRole,
+            };
           }
           if (viewerPassword && password === viewerPassword) {
-            return { id: "bootstrap-viewer", name: "View only (shared password)", role: "viewer" as UserRole };
+            return {
+              id: "bootstrap-viewer",
+              name: process.env.APP_VIEWER_NAME || "View only (shared password)",
+              role: "viewer" as UserRole,
+            };
           }
           return null;
         }

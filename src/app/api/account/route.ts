@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
-import { getUserAuthById, setUserPasswordHash } from "@/lib/repositories/users";
+import { getUserAuthById, setUserName, setUserPasswordHash } from "@/lib/repositories/users";
 
 /**
  * "My Account" — a logged-in user's own details and self-service password
@@ -35,10 +35,20 @@ export async function GET() {
   return NextResponse.json({ bootstrap: false, ...safe });
 }
 
-const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Enter your current password"),
-  newPassword: z.string().min(8, "New password must be at least 8 characters"),
-});
+// name and the password-change pair are independent — a request can carry
+// either, or both, at once. Changing the password still requires the
+// current one; changing just the display name does not (it's not a
+// security-sensitive value).
+const patchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    currentPassword: z.string().optional(),
+    newPassword: z.string().min(8, "New password must be at least 8 characters").optional(),
+  })
+  .refine((data) => !data.newPassword || !!data.currentPassword, {
+    message: "Enter your current password to change it",
+    path: ["currentPassword"],
+  });
 
 export async function PATCH(req: Request) {
   const auth = await requireApiAuth();
@@ -46,26 +56,35 @@ export async function PATCH(req: Request) {
 
   if (isBootstrapId(auth.userId)) {
     return NextResponse.json(
-      { error: "The shared access password is set in Vercel's environment variables, not here." },
+      { error: "The shared login has no personal name or password stored here — see Vercel's environment variables." },
       { status: 400 }
     );
   }
 
   const body = await req.json();
-  const parsed = changePasswordSchema.safeParse(body);
+  const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  if (!parsed.data.name && !parsed.data.newPassword) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
   const user = await getUserAuthById(auth.userId);
   if (!user) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
-  const valid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
-  if (!valid) {
-    return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
+  if (parsed.data.name) {
+    await setUserName(auth.userId, parsed.data.name);
   }
 
-  const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
-  await setUserPasswordHash(auth.userId, passwordHash);
+  if (parsed.data.newPassword) {
+    const valid = await bcrypt.compare(parsed.data.currentPassword!, user.passwordHash);
+    if (!valid) {
+      return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
+    }
+    const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
+    await setUserPasswordHash(auth.userId, passwordHash);
+  }
+
   return NextResponse.json({ ok: true });
 }
