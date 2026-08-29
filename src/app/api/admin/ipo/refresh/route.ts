@@ -19,12 +19,16 @@ import { runIpoSync } from "@/lib/ipoSync";
 export const maxDuration = 60;
 
 /**
- * "Refresh IPO Data" button — editor-only. The browser calls this; the
- * server does the actual fetching. The browser never talks to NSE/BSE
- * directly for this.
+ * "Refresh IPO Data" button — admin-only. This writes to the shared/global
+ * IPO table every user sees, same reasoning as api/ipos/route.ts: an
+ * editor's own data is scoped to themselves everywhere else in the app, so
+ * letting an editor trigger a sync that changes what every other user sees
+ * would be the one inconsistent hole in that isolation. The browser calls
+ * this; the server does the actual fetching. The browser never talks to
+ * NSE/BSE directly for this.
  */
 export async function POST() {
-  const auth = await requireApiAuth("editor");
+  const auth = await requireApiAuth("admin");
   if (!isAuthedContext(auth)) return auth;
 
   try {

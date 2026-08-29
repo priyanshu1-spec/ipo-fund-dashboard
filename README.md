@@ -15,8 +15,14 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
 - **IPO Market Watch** — Mainboard & SME IPOs: dates, price band, lot size,
   registrar, subscription figures, status, and GMP — automatically fetched
   server-side (NSE) on a daily schedule plus on-demand via an admin
-  "Refresh IPO Data" button, with manual add/edit always available. Every
-  row is labeled by data source (NSE vs Manual vs both), and GMP is always
+  "Refresh IPO Data" button, with manual add/edit always available. This
+  data is shared/global — the same rows for every user, unlike the
+  per-user modules below — so adding, editing, deleting, or refreshing it
+  is **admin-only**, not editor: an editor's own writes are scoped to
+  themselves everywhere else in the app, and IPOs would be the one hole in
+  that isolation if an editor could change what every other user sees.
+  Every user (viewer, editor, admin) can still view this list. Every row
+  is labeled by data source (NSE vs Manual vs both), and GMP is always
   clearly marked unofficial/market-indicative since no legitimate source for
   it exists anywhere.
 - **GMP history** — every change is recorded, viewable per-IPO, not just

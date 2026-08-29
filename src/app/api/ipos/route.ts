@@ -44,8 +44,12 @@ export async function GET() {
   return NextResponse.json({ ipos });
 }
 
+// IPOs are shared/global — every user sees the same rows, unlike the
+// per-user Applications/Funds/Investors — so writing to them is admin-only,
+// not "editor". An editor's edits should never be able to change what
+// every other user sees.
 export async function POST(req: Request) {
-  const auth = await requireApiAuth("editor");
+  const auth = await requireApiAuth("admin");
   if (!isAuthedContext(auth)) return auth;
 
   const body = await req.json();

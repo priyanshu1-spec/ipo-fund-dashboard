@@ -52,8 +52,11 @@ interface RefreshResult {
 export default function IposPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "viewer";
-  const canEdit = role === "editor" || role === "admin";
-  const canDelete = role === "editor" || role === "admin";
+  // IPOs are shared/global data (see api/ipos/route.ts) — unlike every other
+  // module in this app, write access here is admin-only, not editor, so an
+  // editor's edits can never change what every other user sees.
+  const canEdit = role === "admin";
+  const canDelete = role === "admin";
 
   const { data, mutate, isLoading } = useSWR<{ ipos: IpoRow[] }>("/api/ipos", fetcher);
   const ipos = data?.ipos ?? [];

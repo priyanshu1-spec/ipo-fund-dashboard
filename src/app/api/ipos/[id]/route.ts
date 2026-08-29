@@ -11,8 +11,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return NextResponse.json({ ipo });
 }
 
+// Shared/global data (see api/ipos/route.ts) — write access is admin-only.
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  const auth = await requireApiAuth("editor");
+  const auth = await requireApiAuth("admin");
   if (!isAuthedContext(auth)) return auth;
   const patch = await req.json();
   try {
@@ -35,7 +36,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const auth = await requireApiAuth("editor");
+  const auth = await requireApiAuth("admin");
   if (!isAuthedContext(auth)) return auth;
   const existing = await getIpo(params.id);
   await deleteIpo(params.id);
