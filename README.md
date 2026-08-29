@@ -84,11 +84,21 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
 - **My Account** (`/account`) — every signed-in user (any role) can see
   their own name, email, role, status, and last-active time; edit their
   own display name; and change their own password (current password
-  required). There's no automatic "forgot password" email flow (that needs
-  a third-party email-sending service, which isn't set up) — if you can't
-  sign in at all, an admin resets your password for you from the Admin
-  panel above; the shared bootstrap password remains the ultimate recovery
-  path for the admin themselves if their own account is ever locked out.
+  required).
+- **Forgot password** (`/forgot-password`) — self-service, for a real
+  registered account only (not the shared password): enter your email,
+  get a 4-digit code by email (via Resend — see `docs/DEPLOYMENT.md` §8;
+  without `RESEND_API_KEY` configured this returns a clear error rather
+  than silently doing nothing), enter it with a new password. The code is
+  bcrypt-hashed at rest (never stored in plain text), expires in 10
+  minutes, and locks out after 5 wrong guesses — a 4-digit space is only
+  10,000 possibilities, so those two limits are load-bearing, not
+  decorative. The request step always returns the same response whether
+  or not the email has an account, so this can't be used to find out who
+  has an account here. If email isn't configured, or you can't sign in at
+  all, an admin resets your password for you from the Admin panel above;
+  the shared bootstrap password remains the ultimate recovery path for the
+  admin themselves if their own account is ever locked out.
   The shared bootstrap login(s) have no personal name/password to manage
   here (nothing is stored in the database for them) — optionally set
   `APP_ACCESS_NAME` / `APP_VIEWER_NAME` in Vercel to give them a display

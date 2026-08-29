@@ -176,3 +176,55 @@ export async function deleteUser(id: string): Promise<void> {
   await ensureSchema();
   await sql`DELETE FROM users WHERE id = ${id}`;
 }
+
+// ============================================================================
+// Forgot-password OTP — deliberately separate from the password-change
+// functions above. Internal — includes reset_otp_hash, never returned to
+// the client (same rule as passwordHash).
+// ============================================================================
+
+export interface UserResetAuth extends UserAccount {
+  resetOtpHash: string;
+  resetOtpExpiresAt: string;
+  resetOtpAttempts: number;
+}
+
+function toResetAuth(r: Record<string, unknown>): UserResetAuth {
+  return {
+    ...toUser(r),
+    resetOtpHash: String(r.reset_otp_hash ?? ""),
+    resetOtpExpiresAt: String(r.reset_otp_expires_at ?? ""),
+    resetOtpAttempts: Number(r.reset_otp_attempts ?? 0),
+  };
+}
+
+export async function getUserResetAuthByEmail(email: string): Promise<UserResetAuth | undefined> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT * FROM users WHERE lower(email) = ${email.toLowerCase()}`;
+  return rows[0] ? toResetAuth(rows[0]) : undefined;
+}
+
+/** Stores a freshly-issued OTP's hash + expiry and resets the attempt counter — called each time a new code is requested, invalidating any earlier unused one. */
+export async function setUserResetOtp(id: string, otpHash: string, expiresAt: string): Promise<void> {
+  await ensureSchema();
+  await sql`
+    UPDATE users SET reset_otp_hash = ${otpHash}, reset_otp_expires_at = ${expiresAt}, reset_otp_attempts = 0
+    WHERE id = ${id}
+  `;
+}
+
+/** Called on each wrong-code guess; returns the new attempt count so the caller can decide whether to invalidate the code outright. */
+export async function incrementResetOtpAttempts(id: string): Promise<number> {
+  await ensureSchema();
+  const { rows } = await sql`
+    UPDATE users SET reset_otp_attempts = reset_otp_attempts + 1 WHERE id = ${id}
+    RETURNING reset_otp_attempts
+  `;
+  return Number(rows[0]?.reset_otp_attempts ?? 0);
+}
+
+/** Called after a successful reset (or to explicitly invalidate a code, e.g. too many wrong attempts) — clearing the hash means no code can verify against it again. */
+export async function clearUserResetOtp(id: string): Promise<void> {
+  await ensureSchema();
+  await sql`UPDATE users SET reset_otp_hash = '', reset_otp_expires_at = '', reset_otp_attempts = 0 WHERE id = ${id}`;
+}

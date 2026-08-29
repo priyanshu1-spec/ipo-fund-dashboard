@@ -248,6 +248,14 @@ const SCHEMA_SQL = `
     ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower
       ON users (lower(username)) WHERE username IS NOT NULL AND username <> '';
+    -- Self-service "forgot password" via a 4-digit emailed OTP. Hash, not
+    -- the raw code, is stored (same reasoning as password_hash); expiry and
+    -- an attempt counter bound how long a leaked/guessed code stays useful
+    -- and how many guesses a 4-digit space (10,000 possibilities) tolerates
+    -- before the code is invalidated outright.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires_at TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_attempts INTEGER NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
