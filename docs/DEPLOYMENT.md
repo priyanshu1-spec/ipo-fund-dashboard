@@ -19,6 +19,7 @@ Vercel deploys from a git repo.
    | `NEXTAUTH_SECRET` | generate with `openssl rand -base64 32` |
    | `NEXTAUTH_URL` | leave blank for now — fill in after step 4 |
    | `CRON_SECRET` | any long random string |
+   | `RESEND_API_KEY` | optional but recommended — emails every admin when a new signup needs approval; see §8 below |
 
 4. Click **Deploy**. You'll get a URL like `your-project.vercel.app`.
 5. Set `NEXTAUTH_URL` to that exact URL, then **redeploy** (Deployments →
@@ -107,6 +108,25 @@ setup at all. A user sets a security question (at `/register`, or later
 from My Account) and answers it to reset their own password. If they
 never set one, an admin resets it for them from `/admin`, and the shared
 password is always its own login rather than something to reset.
+
+## 9. Admin signup notification (optional but recommended)
+
+Without this, a new signup still works fine — it's just silent. You'd
+have to open `/admin` yourself to notice a pending request, which is easy
+to miss.
+
+1. Sign up free at [resend.com](https://resend.com) (no credit card;
+   100 emails/day, 3,000/month on the free tier). Skip this if you already
+   did it for another reason — one `RESEND_API_KEY` covers everything
+   email-related in this app.
+2. Dashboard → **API Keys** → create one → copy it.
+3. Set `RESEND_API_KEY` to that value in Vercel's Environment Variables,
+   redeploy.
+4. Done — every account with role `admin` and status `approved` gets an
+   email the moment someone registers, sent from Resend's own
+   `onboarding@resend.dev` (no domain setup needed), linking straight to
+   `/admin`. Add a second admin later and they're automatically included
+   too — nothing to reconfigure.
 
 ## Known residual `npm audit` findings
 

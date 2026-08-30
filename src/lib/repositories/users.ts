@@ -24,6 +24,13 @@ export async function listUsers(): Promise<UserAccount[]> {
   return rows.map(toUser);
 }
 
+/** Every currently-approved admin's email — used to notify all of them (not just one hardcoded address) when a new signup needs approval. Always reflects live role/status, same as everything else in this file; no separate "who to notify" config to fall out of sync. */
+export async function listApprovedAdminEmails(): Promise<string[]> {
+  await ensureSchema();
+  const { rows } = await sql`SELECT email FROM users WHERE role = 'admin' AND status = 'approved'`;
+  return rows.map((r) => String(r.email ?? "")).filter(Boolean);
+}
+
 export async function getUserById(id: string): Promise<UserAccount | undefined> {
   await ensureSchema();
   const { rows } = await sql`SELECT * FROM users WHERE id = ${id}`;

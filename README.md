@@ -80,7 +80,11 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   directly (no email involved — the admin sets a new one and relays it to
   the user out of band), see each user's last-active time, and a real-time
   activity log of every create/update/delete across IPOs, applications,
-  funds, and investors.
+  funds, and investors. **Every approved admin is emailed when a new
+  signup requests approval** (see `docs/DEPLOYMENT.md` §9 for the one-time
+  `RESEND_API_KEY` setup) — best-effort and non-blocking, so a signup still
+  succeeds even if the notification email fails or isn't configured; you'd
+  just need to check `/admin` yourself in that case.
 - **My Account** (`/account`) — every signed-in user (any role) can see
   their own name, email, role, status, and last-active time; edit their
   own display name; and change their own password (current password

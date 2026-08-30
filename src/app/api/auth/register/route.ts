@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { createUser, setUserSecurityQuestion } from "@/lib/repositories/users";
+import { createUser, listApprovedAdminEmails, setUserSecurityQuestion } from "@/lib/repositories/users";
+import { sendEmail } from "@/lib/email";
+
+/** Guarantees Vercel kills this well before an unresponsive email send could hang the whole request — same lesson as every other outbound-fetch route in this app. */
+export const maxDuration = 20;
 
 const registerSchema = z
   .object({
@@ -47,6 +51,38 @@ export async function POST(req: Request) {
       const answerHash = await bcrypt.hash(parsed.data.securityAnswer.trim().toLowerCase(), 10);
       await setUserSecurityQuestion(user.id, parsed.data.securityQuestion, answerHash);
     }
+
+    // Best-effort admin notification — every currently-approved admin, not
+    // a single hardcoded address, so this keeps working if the admin ever
+    // changes or a second one is added. Deliberately never allowed to fail
+    // the signup itself: the account is already created and correct
+    // regardless of whether this email goes out, so a Resend outage or a
+    // missing RESEND_API_KEY should never turn into a 500 for someone just
+    // trying to register. Failures are logged (visible in Vercel's
+    // function logs) for diagnosability, not surfaced to the requester.
+    try {
+      const adminEmails = await listApprovedAdminEmails();
+      const adminUrl = `${process.env.NEXTAUTH_URL || ""}/admin`;
+      const results = await Promise.all(
+        adminEmails.map((email) =>
+          sendEmail(
+            email,
+            "New signup awaiting approval — IPO Fund Dashboard",
+            `${user.name} (${user.email}) just requested access.\n\n` +
+              `Approve or reject it here: ${adminUrl}`
+          )
+        )
+      );
+      // sendEmail() itself never throws (it catches its own errors and
+      // returns { ok: false, error }), so failures have to be checked
+      // explicitly here rather than relying on this try/catch to see them.
+      results.forEach((result, i) => {
+        if (!result.ok) console.error(`Admin notification to ${adminEmails[i]} failed:`, result.error);
+      });
+    } catch (err) {
+      console.error("Admin notification email failed:", err);
+    }
+
     return NextResponse.json(
       { user: { id: user.id, email: user.email, name: user.name, status: user.status } },
       { status: 201 }
