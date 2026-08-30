@@ -255,6 +255,44 @@ const SCHEMA_SQL = `
     ALTER TABLE users ADD COLUMN IF NOT EXISTS security_question TEXT NOT NULL DEFAULT '';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS security_answer_hash TEXT NOT NULL DEFAULT '';
 
+    -- IPO registrar -> allotment-status-page directory. NOT hardcoded in
+    -- application code — this table IS the source of truth, editable from
+    -- /admin, so a new registrar or a changed URL never needs a code
+    -- change/redeploy. match_key is matched as a case-insensitive substring
+    -- against each IPO's free-text registrar field (see
+    -- repositories/registrars.ts) — the same registrar shows up as "KFin
+    -- Technologies", "KFin Technologies Limited", etc. depending on source.
+    -- Seeded below with the small set of long-established Indian IPO
+    -- registrars (general knowledge, not independently verified live —
+    -- same honest-caveat rule as every other external reference in this
+    -- app) so nothing has to be re-entered for names already known; an
+    -- unrecognized registrar seen during a sync gets a row with
+    -- verified = false instead of being silently skipped, which is what
+    -- surfaces it in /admin as "New Registrar Detected".
+    CREATE TABLE IF NOT EXISTS registrars (
+      id TEXT PRIMARY KEY,
+      match_key TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL DEFAULT '',
+      allotment_url TEXT NOT NULL DEFAULT '',
+      verified BOOLEAN NOT NULL DEFAULT false,
+      source TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT ''
+    );
+    INSERT INTO registrars (id, match_key, display_name, allotment_url, verified, source, created_at, updated_at, updated_by)
+    VALUES
+      ('registrar_seed_kfin', 'kfin', 'KFin Technologies', 'https://ipostatus.kfintech.com/', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_karvy', 'karvy', 'KFin Technologies', 'https://ipostatus.kfintech.com/', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_linkintime', 'link intime', 'Link Intime', 'https://linkintime.co.in/initial_offer/public-issues.html', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_mufgintime', 'mufg intime', 'Link Intime', 'https://linkintime.co.in/initial_offer/public-issues.html', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_bigshare', 'bigshare', 'Bigshare Services', 'https://ipo.bigshareonline.com/ipo_status.html', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_cameo', 'cameo', 'Cameo Corporate Services', 'https://ipo.cameoindia.com/', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_skyline', 'skyline', 'Skyline Financial Services', 'https://www.skylinerta.com/ipo.php', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_purva', 'purva', 'Purva Sharegistry', 'https://www.purvashare.com/investor-services/ipo-allotment-status/', true, 'seed', now()::text, now()::text, 'system'),
+      ('registrar_seed_integrated', 'integrated', 'Integrated Registry', 'https://intimeindia.integratedindia.in/ipostatus.html', true, 'seed', now()::text, now()::text, 'system')
+    ON CONFLICT (match_key) DO NOTHING;
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT '',

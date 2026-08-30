@@ -3,11 +3,11 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { ShieldOff, UserCheck, UserX, History, Trash2, KeyRound } from "lucide-react";
+import { ShieldOff, UserCheck, UserX, History, Trash2, KeyRound, ShieldAlert, ExternalLink } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
-import type { ActivityLogEntry, UserAccount, UserAccountStatus, UserRole } from "@/types";
+import type { ActivityLogEntry, RegistrarRecord, UserAccount, UserAccountStatus, UserRole } from "@/types";
 
 const STATUS_COLORS: Record<UserAccountStatus, string> = {
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
@@ -37,6 +37,7 @@ export default function AdminPage() {
         subtitle="Approve access requests, manage roles, and review who changed what."
       />
       <UsersSection selfId={session?.user?.id} />
+      <RegistrarsSection />
       <ActivitySection />
     </div>
   );
@@ -292,6 +293,225 @@ function ResetPasswordModal({ user, onClose }: { user: UserAccount | null; onClo
         </form>
       )}
     </Modal>
+  );
+}
+
+/**
+ * IPO registrar -> allotment-status-URL directory. Never hardcoded in
+ * source and never guessed — a registrar shows up here automatically
+ * (as unverified) the first time "Refresh IPO Data" sees one this app
+ * doesn't already recognize; an admin looks up its real allotment-status
+ * page once and saves it here, and every IPO using that registrar (past
+ * and future) picks it up immediately, since it's resolved at read time
+ * against this table, not stored per-IPO.
+ */
+function RegistrarsSection() {
+  const { data, mutate, isLoading } = useSWR<{ registrars: RegistrarRecord[] }>(
+    "/api/admin/registrars",
+    fetcher
+  );
+  const registrars = data?.registrars ?? [];
+  const pending = registrars.filter((r) => !r.verified);
+  const verified = registrars.filter((r) => r.verified);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  async function removeRegistrar(id: string, label: string) {
+    if (!confirm(`Remove "${label}" from the registrar directory?`)) return;
+    await apiRequest(`/api/admin/registrars/${id}`, "DELETE");
+    mutate();
+  }
+
+  return (
+    <section>
+      {pending.length > 0 && (
+        <div className="mb-4 space-y-2">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <ShieldAlert size={15} className="text-amber-600" /> New registrars detected ({pending.length})
+          </h2>
+          {pending.map((r) => (
+            <RegistrarRow
+              key={r.id}
+              registrar={r}
+              editing={editingId === r.id}
+              onEdit={() => setEditingId(r.id)}
+              onCancel={() => setEditingId(null)}
+              onSaved={() => {
+                setEditingId(null);
+                mutate();
+              }}
+              onRemove={() => removeRegistrar(r.id, r.displayName || r.matchKey)}
+              highlight
+            />
+          ))}
+        </div>
+      )}
+
+      <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        IPO registrars ({verified.length} verified)
+      </h2>
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full">
+          <thead className="border-b border-slate-100 dark:border-slate-800">
+            <tr>
+              <th className="th">Registrar</th>
+              <th className="th">Allotment URL</th>
+              <th className="th">Source</th>
+              <th className="th">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={4} className="td py-6 text-center text-slate-400">
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!isLoading && verified.length === 0 && (
+              <tr>
+                <td colSpan={4} className="td py-6 text-center text-slate-400">
+                  No verified registrars yet.
+                </td>
+              </tr>
+            )}
+            {verified.map((r) => (
+              <RegistrarRow
+                key={r.id}
+                registrar={r}
+                editing={editingId === r.id}
+                onEdit={() => setEditingId(r.id)}
+                onCancel={() => setEditingId(null)}
+                onSaved={() => {
+                  setEditingId(null);
+                  mutate();
+                }}
+                onRemove={() => removeRegistrar(r.id, r.displayName || r.matchKey)}
+                asRow
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function RegistrarRow({
+  registrar,
+  editing,
+  onEdit,
+  onCancel,
+  onSaved,
+  onRemove,
+  highlight,
+  asRow,
+}: {
+  registrar: RegistrarRecord;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSaved: () => void;
+  onRemove: () => void;
+  /** Renders as a standalone card (the "New registrars detected" list) instead of a table row. */
+  highlight?: boolean;
+  /** Renders as a <tr> (the main directory table) instead of a card. */
+  asRow?: boolean;
+}) {
+  const [url, setUrl] = useState(registrar.allotmentUrl);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiRequest(`/api/admin/registrars/${registrar.id}`, "PATCH", { allotmentUrl: url, verified: true });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const editForm = (
+    <form onSubmit={handleSave} className="flex flex-wrap items-center gap-2">
+      <input
+        type="url"
+        required
+        className="input min-w-[16rem] flex-1 py-1 text-xs"
+        placeholder="https://... official allotment-status page"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        autoFocus
+      />
+      <button type="submit" className="btn-primary px-2 py-1 text-xs" disabled={saving}>
+        {saving ? "Saving…" : "Save & verify"}
+      </button>
+      <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={onCancel}>
+        Cancel
+      </button>
+      {error && <p className="w-full text-xs text-red-600">{error}</p>}
+    </form>
+  );
+
+  if (highlight) {
+    return (
+      <div className="card flex flex-wrap items-center justify-between gap-3 border-amber-200 dark:border-amber-900/50">
+        <div>
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{registrar.displayName}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Seen on a recent IPO — no allotment-status page saved yet.
+          </p>
+        </div>
+        {editing ? (
+          editForm
+        ) : (
+          <div className="flex gap-2">
+            <button onClick={onEdit} className="btn-primary px-3 py-1.5 text-xs">
+              Add allotment URL
+            </button>
+            <button onClick={onRemove} className="text-xs font-medium text-red-600 hover:underline">
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td className="td font-medium">{registrar.displayName}</td>
+      <td className="td">
+        {editing ? (
+          editForm
+        ) : (
+          <a
+            href={registrar.allotmentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-brand-600 hover:underline"
+          >
+            {registrar.allotmentUrl} <ExternalLink size={11} />
+          </a>
+        )}
+      </td>
+      <td className="td text-xs capitalize text-slate-500 dark:text-slate-400">{registrar.source}</td>
+      <td className="td">
+        {!editing && (
+          <div className="flex gap-3">
+            <button onClick={onEdit} className="text-xs font-medium text-brand-600 hover:underline">
+              Edit
+            </button>
+            <button onClick={onRemove} className="text-xs font-medium text-red-600 hover:underline">
+              Remove
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }
 

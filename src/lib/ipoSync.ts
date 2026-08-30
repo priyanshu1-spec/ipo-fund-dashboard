@@ -23,6 +23,7 @@ import {
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
 import { isPlausibleIpoName, validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
+import { listRegistrars, matchRegistrar, upsertDetectedRegistrar } from "@/lib/repositories/registrars";
 import type { IpoDataSource, IpoRow } from "@/types";
 
 // Order matters only in that NSE (official) typically discovers a company
@@ -332,6 +333,10 @@ export async function runIpoSync(): Promise<SyncSummary> {
   // fuzzy name-matching relies on, and avoids two providers writing to
   // possibly-overlapping rows concurrently.
   const providerSummaries: ProviderRunSummary[] = [];
+  // Every distinct registrar string seen across every provider's valid
+  // rows this run — checked against the registrars table once, after the
+  // write loop, rather than once per row (see the detection step below).
+  const registrarsSeen = new Set<string>();
   for (const { provider, providerStart, fetchMs, result, fetchError } of fetchOutcomes) {
     let inserted = 0;
     let updated = 0;
@@ -356,6 +361,7 @@ export async function runIpoSync(): Promise<SyncSummary> {
           const outcome = await applyNormalizedIpo(item, provider);
           if (outcome === "inserted") inserted++;
           if (outcome === "updated") updated++;
+          if (item.registrar?.trim()) registrarsSeen.add(item.registrar.trim());
         }
 
         const allWarnings = [
@@ -404,6 +410,21 @@ export async function runIpoSync(): Promise<SyncSummary> {
     providerSummaries.push(summary);
     await logFetch(summary, providerStart, providerCompleted);
     await recordSourceHealth(provider.key, success, error, providerCompleted);
+  }
+
+  // Registrar detection: every registrar name seen this run that doesn't
+  // already match a row in the registrars table (verified or still
+  // pending) gets a placeholder row — this is what surfaces it in /admin
+  // as "New Registrar Detected" for a human to look up once, instead of
+  // this app trying (and failing, the same way Chittorgarh/IPOWatch did)
+  // to guess or scrape its way to an allotment URL automatically.
+  if (registrarsSeen.size > 0) {
+    const knownRegistrars = await listRegistrars();
+    for (const registrar of registrarsSeen) {
+      if (!matchRegistrar(registrar, knownRegistrars)) {
+        await upsertDetectedRegistrar(registrar);
+      }
+    }
   }
 
   const completedAt = new Date().toISOString();

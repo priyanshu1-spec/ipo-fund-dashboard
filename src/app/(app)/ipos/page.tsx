@@ -3,13 +3,12 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { Plus, RefreshCw, Search, Pencil, Trash2, History, ExternalLink } from "lucide-react";
+import { Plus, RefreshCw, Search, Pencil, Trash2, History, ExternalLink, Link2Off } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate, IPO_STATUS_COLORS } from "@/lib/utils";
-import { getAllotmentLink } from "@/lib/allotmentLinks";
 import { estimateAllotmentDate, estimateListingDate } from "@/lib/ipoTimeline";
 import type { GmpHistoryEntry, IpoRow, IpoStatus, IpoType } from "@/types";
 
@@ -264,8 +263,17 @@ export default function IposPage() {
               </tr>
             )}
             {filtered.map((ipo) => {
-              const showAllotmentLink = ipo.status !== "Upcoming" && ipo.status !== "Open";
-              const allotmentLink = showAllotmentLink ? getAllotmentLink(ipo.registrar, ipo.name) : null;
+              // Allotment checking only makes sense once an issue has
+              // actually closed — before that there's nothing on any
+              // registrar's site to find yet.
+              const showAllotmentAction = ipo.status !== "Upcoming" && ipo.status !== "Open";
+              // allotmentUrl/allotmentUrlVerified come from GET /api/ipos,
+              // resolved server-side against the admin-managed registrars
+              // table (src/lib/repositories/registrars.ts) — never
+              // hardcoded here, never guessed. A registrar with no
+              // admin-verified entry yet means allotmentUrlVerified is
+              // false and allotmentUrl is "" — shown as "Link unavailable",
+              // never a clickable-but-wrong URL.
               // Estimated only — computed from SEBI's T+3 mainboard listing
               // timeline (close -> allotment T+1, listing T+3), never
               // confused with a real NSE-confirmed date. Only shown once
@@ -293,17 +301,29 @@ export default function IposPage() {
                     ) : (
                       "—"
                     )}
-                    {allotmentLink && (
-                      <a
-                        href={allotmentLink.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={allotmentLink.label}
-                        className="text-slate-400 hover:text-brand-600"
-                      >
-                        <ExternalLink size={12} />
-                      </a>
-                    )}
+                    {showAllotmentAction &&
+                      (ipo.allotmentUrlVerified && ipo.allotmentUrl ? (
+                        <a
+                          href={ipo.allotmentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Check allotment status on the registrar's official site"
+                          className="text-slate-400 hover:text-brand-600"
+                        >
+                          <ExternalLink size={12} />
+                        </a>
+                      ) : (
+                        <span
+                          title={
+                            ipo.registrar
+                              ? `"${ipo.registrar}" isn't a verified registrar yet — an admin needs to add its allotment-status URL in Admin -> IPO registrars.`
+                              : "No registrar on file for this IPO yet."
+                          }
+                          className="text-slate-300 dark:text-slate-600"
+                        >
+                          <Link2Off size={12} />
+                        </span>
+                      ))}
                   </div>
                 </td>
                 <td className="td">

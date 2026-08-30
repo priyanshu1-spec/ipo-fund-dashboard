@@ -112,6 +112,28 @@ still fully visible and editable by any `admin`, just invisible to
 | last_active_at | stamped on every authenticated API request (see below) |
 | security_question, security_answer_hash | forgot-password recovery — question stored in the clear (shown to whoever attempts a reset for that email; unavoidable, since answering it *is* the identity proof), answer bcrypt-hashed. See `src/app/api/auth/{forgot-password,reset-password}/route.ts`. |
 
+## `registrars` — IPO allotment-status link directory
+
+| Column | Notes |
+|---|---|
+| id | `registrar_xxxxxxxx` |
+| match_key | unique, case-insensitive substring matched against each IPO's free-text `registrar` field (e.g. `"kfin"` matches `"KFin Technologies Limited"`) |
+| display_name | human-readable name shown in `/admin` and, once verified, in the IPO table's tooltip |
+| allotment_url | the registrar's official IPO-allotment-status page — empty until an admin sets it |
+| verified | `false` until an admin explicitly saves a URL for this row — the ONLY thing that makes an IPO's "Check Allotment" link clickable (`src/app/api/ipos/route.ts` resolves against this table, never a hardcoded map) |
+| source | `seed` (shipped with the app), `auto-detected` (seen during a sync, not yet reviewed), or `admin` |
+| created_at, updated_at, updated_by | |
+
+Seeded at first schema run with the handful of long-established Indian IPO
+registrars (KFin, Link Intime, Bigshare, Cameo, Skyline, Purva, Integrated
+Registry — `verified = true`, `source = 'seed'`). Any other registrar name
+seen during a sync (`runIpoSync()` in `src/lib/ipoSync.ts`) that doesn't
+match an existing row gets one inserted with `verified = false` — that's
+what surfaces it in `/admin` as "New registrar detected." Resolution
+happens at *read* time (`GET /api/ipos`), not stored per-IPO, so an
+admin's fix or a new save applies immediately to every past and future IPO
+using that registrar, no re-sync required.
+
 Sign-up (`/register`) always creates a `pending` row with role `viewer`; an
 admin changes status/role from `/admin`. The original Milestone 1 shared
 passwords (`APP_ACCESS_PASSWORD` → role `admin`, `APP_VIEWER_PASSWORD` →

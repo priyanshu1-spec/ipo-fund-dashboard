@@ -25,12 +25,18 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   is labeled by data source (NSE vs Manual vs both), and GMP is always
   clearly marked unofficial/market-indicative since no legitimate source for
   it exists anywhere. Once an IPO closes, an icon next to its Allotment
-  date links straight to that IPO's **registrar** (KFin, Link Intime,
-  Bigshare, etc. — allotment is always checked on the registrar's site,
-  never NSE/BSE) for a small set of well-known registrars this app
-  recognizes by name (`src/lib/allotmentLinks.ts`); an unrecognized or
-  missing registrar falls back to a pre-filled Google search instead of a
-  dead link, so this always gets you *somewhere* useful. When NSE hasn't
+  date links straight to that IPO's **registrar**'s official allotment-
+  status page (allotment is always checked on the registrar's site, never
+  NSE/BSE) — resolved against an **admin-managed directory** (`registrars`
+  table, `/admin` → "IPO registrars"), never a hardcoded list and never a
+  guessed URL. Seeded with the handful of long-established registrars
+  (KFin, Link Intime, Bigshare, Cameo, Skyline, Purva, Integrated
+  Registry); any other registrar name a sync run sees for the first time
+  gets flagged in `/admin` as "New registrar detected" for an admin to
+  look up once and save — reused automatically for every IPO with that
+  registrar from then on, past and future, no code change or redeploy
+  needed. Until a registrar is verified, the icon shows "Link unavailable"
+  instead of a clickable-but-unconfirmed URL. When NSE hasn't
   published an allotment/listing date yet (and no one has entered one
   manually), the dashboard shows an **estimated** one instead of leaving it
   blank — computed from SEBI's standardized T+3 mainboard listing timeline

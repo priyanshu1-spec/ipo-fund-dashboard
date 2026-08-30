@@ -99,6 +99,31 @@ export interface IpoRow {
   sourceUrl: string;
   lastSyncedAt: string;
   notes?: string;
+  /**
+   * NOT a database column on the ipos table — computed on every GET
+   * /api/ipos by matching `registrar` against the admin-managed
+   * registrars table (see repositories/registrars.ts) and included here
+   * only so the client never needs its own DB access to render it.
+   * allotmentUrl is "" whenever there's no verified match (unrecognized
+   * registrar, or no registrar at all) — the UI must never treat an empty
+   * string as a real link.
+   */
+  allotmentUrl?: string;
+  allotmentUrlVerified?: boolean;
+}
+
+/** A registrar's admin-managed allotment-status page — see src/lib/repositories/registrars.ts. Never hardcoded, never guessed: only becomes verified/clickable via an admin explicitly saving it in /admin. */
+export interface RegistrarRecord {
+  id: string;
+  matchKey: string;
+  displayName: string;
+  allotmentUrl: string;
+  verified: boolean;
+  /** 'seed' (shipped with the app), 'auto-detected' (seen during a sync, not yet reviewed), or 'admin' (entered/edited by an admin). */
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
 }
 
 export interface GmpHistoryEntry {

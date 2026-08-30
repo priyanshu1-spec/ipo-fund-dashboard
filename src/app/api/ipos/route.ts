@@ -3,6 +3,8 @@ import { z } from "zod";
 import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { createIpo, listIpos } from "@/lib/repositories/ipos";
 import { recordActivity } from "@/lib/repositories/activityLog";
+import { listRegistrars, matchRegistrar } from "@/lib/repositories/registrars";
+import type { IpoRow } from "@/types";
 
 const ipoInputSchema = z.object({
   name: z.string().min(1),
@@ -35,12 +37,33 @@ const ipoInputSchema = z.object({
   notes: z.string().optional().default(""),
 });
 
+/**
+ * Attaches each IPO's allotment-status link, resolved against the
+ * admin-managed registrars table (never hardcoded, never guessed — see
+ * repositories/registrars.ts) rather than stored per-IPO: resolving at
+ * read time means an admin fixing/adding a registrar's URL applies
+ * immediately and retroactively to every IPO that used it, past and
+ * future, with no re-sync needed. One extra query total for the whole
+ * list, not one per IPO.
+ */
+async function withAllotmentLinks(ipos: IpoRow[]): Promise<IpoRow[]> {
+  const registrars = await listRegistrars();
+  return ipos.map((ipo) => {
+    const match = matchRegistrar(ipo.registrar, registrars);
+    return {
+      ...ipo,
+      allotmentUrl: match?.verified ? match.allotmentUrl : "",
+      allotmentUrlVerified: Boolean(match?.verified),
+    };
+  });
+}
+
 // Manually adding/editing an IPO is always officially "Manual" data — automated
 // syncing (which can mark isOfficial/NSE) only ever happens via ipoSync.ts.
 export async function GET() {
   const auth = await requireApiAuth("viewer");
   if (!isAuthedContext(auth)) return auth;
-  const ipos = await listIpos();
+  const ipos = await withAllotmentLinks(await listIpos());
   return NextResponse.json({ ipos });
 }
 
