@@ -125,6 +125,8 @@ interface NormalizedRowResult {
   lotSizeDiagnostic?: string;
   /** Populated when BOTH allotment and listing dates come back empty for a row. Real IPO prospectuses declare a full tentative timeline (open/close/allotment/listing) upfront, so — unlike lot size, which can be legitimately undetermined pre-open — there's no status where these being missing is obviously expected; worth capturing across every row to see NSE's actual raw shape, same reasoning that already turned up lot size in some rows despite an earlier "confirmed absent" read that turned out incomplete. */
   dateDiagnostic?: string;
+  /** Populated when registrar comes back empty. Unlike lot size, the registrar to the issue is fixed and disclosed the moment the RHP/prospectus is filed — it isn't stage-dependent, so there's no status where its absence is expected. Feeds the same "why is the allotment-link icon showing unavailable" question the dashboard now surfaces per IPO. */
+  registrarDiagnostic?: string;
 }
 
 function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRowResult {
@@ -166,6 +168,7 @@ function normalizeRow(row: Record<string, unknown>, type: IpoType): NormalizedRo
     lotSizeDiagnostic: lotSize == null ? `${name}: ${JSON.stringify(row)}` : undefined,
     dateDiagnostic:
       allotmentDate == null && listingDate == null ? `${name} (${status ?? "?"}): ${JSON.stringify(row)}` : undefined,
+    registrarDiagnostic: !ipo.registrar ? `${name}: ${JSON.stringify(row)}` : undefined,
   };
 }
 
@@ -204,13 +207,15 @@ export const nseProvider: IpoDataProvider = {
     const ipos: NormalizedIpo[] = [];
     const lotSizeDiagnostics: string[] = [];
     const dateDiagnostics: string[] = [];
+    const registrarDiagnostics: string[] = [];
     function collect(rows: Record<string, unknown>[], type: IpoType) {
       for (const row of rows) {
-        const { ipo, lotSizeDiagnostic, dateDiagnostic } = normalizeRow(row, type);
+        const { ipo, lotSizeDiagnostic, dateDiagnostic, registrarDiagnostic } = normalizeRow(row, type);
         if (ipo) ipos.push(ipo);
         else warnings.push(`Skipped one NSE ${type} row with no recognizable company name field`);
         if (lotSizeDiagnostic && lotSizeDiagnostics.length < 2) lotSizeDiagnostics.push(lotSizeDiagnostic);
         if (dateDiagnostic && dateDiagnostics.length < 2) dateDiagnostics.push(dateDiagnostic);
+        if (registrarDiagnostic && registrarDiagnostics.length < 2) registrarDiagnostics.push(registrarDiagnostic);
       }
     }
     collect(mainboard.rows, "Mainboard");
@@ -235,6 +240,18 @@ export const nseProvider: IpoDataProvider = {
       // on this endpoint (not fixable here — falls back to manual entry).
       warnings.push(
         `Allotment/listing date missing — raw NSE row(s) for diagnosis: ${JSON.stringify(dateDiagnostics)}`
+      );
+    }
+
+    if (registrarDiagnostics.length > 0) {
+      // Same reasoning again, for registrar — see the registrarDiagnostic
+      // doc comment on normalizeRow(). Tells us, from a real refresh,
+      // whether NSE has this field under a different name (fix the key
+      // list) or genuinely never sends it here (falls back to manual entry
+      // — and explains why the allotment-link icon shows "unavailable" for
+      // that IPO despite the registrar directory being correctly set up).
+      warnings.push(
+        `Registrar missing — raw NSE row(s) for diagnosis: ${JSON.stringify(registrarDiagnostics)}`
       );
     }
 

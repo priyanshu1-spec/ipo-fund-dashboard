@@ -293,6 +293,24 @@ const SCHEMA_SQL = `
       ('registrar_seed_integrated', 'integrated', 'Integrated Registry', 'https://intimeindia.integratedindia.in/ipostatus.html', true, 'seed', now()::text, now()::text, 'system')
     ON CONFLICT (match_key) DO NOTHING;
 
+    -- NSE/BSE trading-holiday calendar, admin-managed and empty by
+    -- default. Deliberately NOT seeded with holiday dates the way
+    -- registrars is seeded with known URLs: a registrar's homepage is
+    -- stable and easy to confirm, but an exact trading-holiday calendar
+    -- changes every year and this app has no live, verifiable source for
+    -- it — shipping guessed dates would silently corrupt the estimated
+    -- allotment/listing dates in ipoTimeline.ts rather than just leaving
+    -- them slightly less precise. An admin adds each date once (from
+    -- NSE's/BSE's published yearly holiday list); every estimate
+    -- computed after that skips it. See repositories/marketHolidays.ts.
+    CREATE TABLE IF NOT EXISTS market_holidays (
+      id TEXT PRIMARY KEY,
+      holiday_date TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT ''
+    );
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL DEFAULT '',

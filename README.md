@@ -39,13 +39,19 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   instead of a clickable-but-unconfirmed URL. When NSE hasn't
   published an allotment/listing date yet (and no one has entered one
   manually), the dashboard shows an **estimated** one instead of leaving it
-  blank — computed from SEBI's standardized T+3 mainboard listing timeline
-  (close date → allotment T+1 working day → listing T+3), a regulatory
-  rule, not another scrape (`src/lib/ipoTimeline.ts`). Always shown in
-  italics with "(est.)" and a tooltip explaining it's an estimate, doesn't
-  account for market holidays, and is Mainboard-only (SME's timeline isn't
-  consistent enough to estimate confidently) — never silently blended in
-  as if it were NSE-confirmed.
+  blank — computed server-side from SEBI's standardized T+3 mainboard
+  listing timeline (close date → allotment T+1 working day → listing T+3),
+  a regulatory rule, not another scrape (`src/lib/ipoTimeline.ts`),
+  skipping weekends **and** any date in the **admin-managed market-holiday
+  calendar** (`market_holidays` table, `/admin` → "Market holidays") —
+  left empty by default and never pre-filled with guessed dates, since
+  this app has no live, verifiable source for the exact yearly NSE/BSE
+  holiday list; an admin adds each date once from NSE's/BSE's published
+  calendar. Always shown in italics with "(est.)" and a tooltip explaining
+  it's an estimate and Mainboard-only (SME's timeline isn't consistent
+  enough to estimate confidently) — never silently blended in as if it
+  were NSE-confirmed, and still off by a day for any holiday not yet
+  added to the list.
 - **GMP history** — every change is recorded, viewable per-IPO, not just
   overwritten.
 - **Application Ledger** — every bid: which Demat/bank account it was applied

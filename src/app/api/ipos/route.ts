@@ -4,6 +4,8 @@ import { isAuthedContext, requireApiAuth } from "@/lib/apiAuth";
 import { createIpo, listIpos } from "@/lib/repositories/ipos";
 import { recordActivity } from "@/lib/repositories/activityLog";
 import { listRegistrars, matchRegistrar } from "@/lib/repositories/registrars";
+import { listMarketHolidayDates } from "@/lib/repositories/marketHolidays";
+import { estimateAllotmentDate, estimateListingDate } from "@/lib/ipoTimeline";
 import type { IpoRow } from "@/types";
 
 const ipoInputSchema = z.object({
@@ -58,12 +60,29 @@ async function withAllotmentLinks(ipos: IpoRow[]): Promise<IpoRow[]> {
   });
 }
 
+/**
+ * Attaches estimated allotment/listing dates from SEBI's T+3 mainboard rule
+ * (see lib/ipoTimeline.ts), skipping weekends and every date in the
+ * admin-managed market_holidays table. Computed server-side (not in the
+ * client, like before) purely because the holiday list lives in the DB —
+ * only set when there's no real date yet, so an actual NSE/manual date
+ * always wins.
+ */
+async function withEstimatedDates(ipos: IpoRow[]): Promise<IpoRow[]> {
+  const holidayDates = await listMarketHolidayDates();
+  return ipos.map((ipo) => ({
+    ...ipo,
+    estimatedAllotmentDate: ipo.allotmentDate ? null : estimateAllotmentDate(ipo.closeDate, ipo.type, holidayDates),
+    estimatedListingDate: ipo.listingDate ? null : estimateListingDate(ipo.closeDate, ipo.type, holidayDates),
+  }));
+}
+
 // Manually adding/editing an IPO is always officially "Manual" data — automated
 // syncing (which can mark isOfficial/NSE) only ever happens via ipoSync.ts.
 export async function GET() {
   const auth = await requireApiAuth("viewer");
   if (!isAuthedContext(auth)) return auth;
-  const ipos = await withAllotmentLinks(await listIpos());
+  const ipos = await withEstimatedDates(await withAllotmentLinks(await listIpos()));
   return NextResponse.json({ ipos });
 }
 

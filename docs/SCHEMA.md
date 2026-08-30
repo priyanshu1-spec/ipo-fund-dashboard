@@ -134,6 +134,27 @@ happens at *read* time (`GET /api/ipos`), not stored per-IPO, so an
 admin's fix or a new save applies immediately to every past and future IPO
 using that registrar, no re-sync required.
 
+## `market_holidays` — NSE/BSE trading-holiday calendar
+
+| Column | Notes |
+|---|---|
+| id | `holiday_xxxxxxxx` |
+| holiday_date | ISO `yyyy-MM-dd`, unique |
+| description | free text, e.g. "Diwali Laxmi Pujan" — optional |
+| created_at, created_by | |
+
+Empty by default and never seeded — unlike `registrars`, this app has no
+live, independently-verifiable source for the exact yearly NSE/BSE trading
+holiday list, so it never guesses one. An admin adds each date once (from
+NSE's/BSE's published calendar) in `/admin`; `GET /api/ipos` then uses the
+full set to make `estimateAllotmentDate`/`estimateListingDate`
+(`src/lib/ipoTimeline.ts`) skip that date the same way they already skip
+Saturday/Sunday, when computing the `estimatedAllotmentDate`/
+`estimatedListingDate` fields on each IPO row (only populated when there's
+no real, NSE-confirmed date yet). Until a holiday is added here, an
+estimate spanning it can still be off by a day — which is exactly why the
+IPO page always labels these dates "estimated," never as NSE-confirmed.
+
 Sign-up (`/register`) always creates a `pending` row with role `viewer`; an
 admin changes status/role from `/admin`. The original Milestone 1 shared
 passwords (`APP_ACCESS_PASSWORD` → role `admin`, `APP_VIEWER_PASSWORD` →

@@ -3,11 +3,11 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { ShieldOff, UserCheck, UserX, History, Trash2, KeyRound, ShieldAlert, ExternalLink } from "lucide-react";
+import { ShieldOff, UserCheck, UserX, History, Trash2, KeyRound, ShieldAlert, ExternalLink, CalendarOff } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
-import type { ActivityLogEntry, RegistrarRecord, UserAccount, UserAccountStatus, UserRole } from "@/types";
+import type { ActivityLogEntry, MarketHolidayRecord, RegistrarRecord, UserAccount, UserAccountStatus, UserRole } from "@/types";
 
 const STATUS_COLORS: Record<UserAccountStatus, string> = {
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
@@ -38,6 +38,7 @@ export default function AdminPage() {
       />
       <UsersSection selfId={session?.user?.id} />
       <RegistrarsSection />
+      <MarketHolidaysSection />
       <ActivitySection />
     </div>
   );
@@ -512,6 +513,127 @@ function RegistrarRow({
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * NSE/BSE trading-holiday calendar used to make the estimated
+ * allotment/listing dates on the IPO page skip actual market holidays,
+ * not just weekends (see lib/ipoTimeline.ts). Deliberately empty until an
+ * admin adds dates here — this app has no live, verifiable source for the
+ * exact yearly holiday list, so it never guesses one; add each date from
+ * NSE's/BSE's published holiday calendar as it's confirmed.
+ */
+function MarketHolidaysSection() {
+  const { data, mutate, isLoading } = useSWR<{ holidays: MarketHolidayRecord[] }>(
+    "/api/admin/market-holidays",
+    fetcher
+  );
+  const holidays = data?.holidays ?? [];
+  const [date, setDate] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await apiRequest("/api/admin/market-holidays", "POST", { date, description });
+      setDate("");
+      setDescription("");
+      mutate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add holiday");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeHoliday(id: string, label: string) {
+    if (!confirm(`Remove ${label} from the market-holiday list?`)) return;
+    await apiRequest(`/api/admin/market-holidays/${id}`, "DELETE");
+    mutate();
+  }
+
+  return (
+    <section>
+      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <CalendarOff size={15} /> Market holidays ({holidays.length})
+      </h2>
+      <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+        NSE/BSE trading holidays skipped when estimating an IPO&apos;s allotment/listing date. Add each date
+        from NSE&apos;s or BSE&apos;s published holiday calendar — nothing is pre-filled or guessed.
+      </p>
+      <form onSubmit={handleAdd} className="card mb-3 flex flex-wrap items-end gap-2">
+        <div>
+          <label className="label">Date</label>
+          <input
+            type="date"
+            required
+            className="input py-1 text-xs"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+        <div className="flex-1">
+          <label className="label">Description (optional)</label>
+          <input
+            type="text"
+            className="input py-1 text-xs"
+            placeholder="e.g. Diwali Laxmi Pujan"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <button type="submit" className="btn-primary px-3 py-1.5 text-xs" disabled={saving}>
+          {saving ? "Adding…" : "Add holiday"}
+        </button>
+        {error && <p className="w-full text-xs text-red-600">{error}</p>}
+      </form>
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full">
+          <thead className="border-b border-slate-100 dark:border-slate-800">
+            <tr>
+              <th className="th">Date</th>
+              <th className="th">Description</th>
+              <th className="th">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={3} className="td py-6 text-center text-slate-400">
+                  Loading…
+                </td>
+              </tr>
+            )}
+            {!isLoading && holidays.length === 0 && (
+              <tr>
+                <td colSpan={3} className="td py-6 text-center text-slate-400">
+                  No market holidays added yet — estimates currently skip weekends only.
+                </td>
+              </tr>
+            )}
+            {holidays.map((h) => (
+              <tr key={h.id} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="td font-medium">{new Date(h.date).toLocaleDateString("en-IN")}</td>
+                <td className="td text-slate-500 dark:text-slate-400">{h.description || "—"}</td>
+                <td className="td">
+                  <button
+                    onClick={() => removeHoliday(h.id, h.date)}
+                    className="text-xs font-medium text-red-600 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

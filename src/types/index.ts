@@ -110,6 +110,16 @@ export interface IpoRow {
    */
   allotmentUrl?: string;
   allotmentUrlVerified?: boolean;
+  /**
+   * Also NOT a database column — computed on every GET /api/ipos from
+   * SEBI's T+3 mainboard listing rule (see lib/ipoTimeline.ts), skipping
+   * weekends AND the admin-managed market_holidays table. Only set when
+   * there's no real allotmentDate/listingDate yet and this is a
+   * Mainboard IPO (SME timelines aren't consistent enough to estimate).
+   * Always render these as "estimated", never as if NSE-confirmed.
+   */
+  estimatedAllotmentDate?: string | null;
+  estimatedListingDate?: string | null;
 }
 
 /** A registrar's admin-managed allotment-status page — see src/lib/repositories/registrars.ts. Never hardcoded, never guessed: only becomes verified/clickable via an admin explicitly saving it in /admin. */
@@ -124,6 +134,15 @@ export interface RegistrarRecord {
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
+}
+
+/** An NSE/BSE trading holiday an admin has entered — see src/lib/repositories/marketHolidays.ts. Empty by default; never seeded with guessed dates. */
+export interface MarketHolidayRecord {
+  id: string;
+  date: string; // ISO yyyy-MM-dd
+  description: string;
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface GmpHistoryEntry {
