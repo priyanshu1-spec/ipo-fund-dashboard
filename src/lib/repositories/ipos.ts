@@ -1,6 +1,65 @@
 import { ensureSchema, query, sql } from "@/lib/db";
 import { generateId, num } from "@/lib/id";
-import type { GmpHistoryEntry, IpoRow, IpoType, SubscriptionHistoryEntry } from "@/types";
+import type {
+  FieldSourceMeta,
+  GmpHistoryEntry,
+  IpoFieldKey,
+  IpoFieldSources,
+  IpoRow,
+  IpoType,
+  SubscriptionHistoryEntry,
+} from "@/types";
+
+const TRACKED_FIELDS: IpoFieldKey[] = ["openDate", "closeDate", "allotmentDate", "listingDate", "registrar"];
+
+function parseFieldSources(raw: unknown): IpoFieldSources {
+  if (typeof raw !== "string" || !raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as IpoFieldSources) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Decides, per tracked field, who gets credited as the source of the value
+ * about to be written. `overrides` (passed by ipoSync.ts) always wins —
+ * that's how NSE-confirmed values get tagged "NSE"/high-confidence instead
+ * of falling into the default below. Absent an override, a field is only
+ * re-tagged "Manual" when its value is actually CHANGING from what's
+ * already stored — this is what stops an admin's edit-and-save on one
+ * field (e.g. GMP) from silently overwriting another field's "NSE"
+ * attribution just because the whole form round-trips every column.
+ * Fields untouched by either path keep whatever attribution they already
+ * had (or none, if never confirmed by any tracked source).
+ */
+function mergeFieldSources(
+  input: Partial<IpoRow>,
+  existing: IpoRow | undefined,
+  overrides?: Partial<Record<IpoFieldKey, FieldSourceMeta>>
+): IpoFieldSources {
+  const merged: IpoFieldSources = { ...(existing?.fieldSources ?? {}) };
+  const now = new Date().toISOString();
+  for (const key of TRACKED_FIELDS) {
+    if (overrides?.[key]) {
+      merged[key] = overrides[key];
+      continue;
+    }
+    const newValue = input[key];
+    if (newValue === undefined) continue;
+    const oldValue = existing?.[key];
+    if (newValue !== oldValue) {
+      merged[key] = {
+        source: "Manual",
+        sourceUrl: input.sourceUrl ?? existing?.sourceUrl ?? "",
+        lastUpdated: now,
+        confidence: "manual",
+      };
+    }
+  }
+  return merged;
+}
 
 /**
  * Stable IPO identifier: slug(name) + type. This guarantees the same
@@ -62,6 +121,7 @@ function toIpo(r: Record<string, unknown>): IpoRow {
     sourceUrl: String(r.source_url ?? ""),
     lastSyncedAt: String(r.last_synced_at ?? ""),
     notes: String(r.notes ?? ""),
+    fieldSources: parseFieldSources(r.field_sources),
   };
 }
 
@@ -105,7 +165,7 @@ const IPO_COLUMNS = [
   "lead_managers", "qib_subscription", "nii_subscription", "retail_subscription",
   "employee_subscription", "shareholder_subscription", "overall_subscription", "gmp",
   "gmp_updated_at", "listing_price", "listing_gain_percent", "exchange", "is_official",
-  "data_source", "source_url", "last_synced_at", "notes",
+  "data_source", "source_url", "last_synced_at", "notes", "field_sources",
 ] as const;
 
 function toColumnValues(ipo: IpoRow): unknown[] {
@@ -117,7 +177,7 @@ function toColumnValues(ipo: IpoRow): unknown[] {
     ipo.niiSubscription, ipo.retailSubscription, ipo.employeeSubscription,
     ipo.shareholderSubscription, ipo.overallSubscription, ipo.gmp, ipo.gmpUpdatedAt,
     ipo.listingPrice, ipo.listingGainPercent, ipo.exchange, ipo.isOfficial, ipo.dataSource,
-    ipo.sourceUrl, ipo.lastSyncedAt, ipo.notes,
+    ipo.sourceUrl, ipo.lastSyncedAt, ipo.notes, JSON.stringify(ipo.fieldSources ?? {}),
   ];
 }
 
@@ -163,24 +223,35 @@ function defaultIpo(input: Partial<IpoRow>): IpoRow {
     sourceUrl: input.sourceUrl ?? "",
     lastSyncedAt: input.lastSyncedAt ?? now,
     notes: input.notes ?? "",
+    fieldSources: input.fieldSources ?? {},
   };
 }
 
-export async function createIpo(input: Partial<IpoRow>): Promise<IpoRow> {
+export async function createIpo(
+  input: Partial<IpoRow>,
+  fieldSourceOverrides?: Partial<Record<IpoFieldKey, FieldSourceMeta>>
+): Promise<IpoRow> {
   await ensureSchema();
   const ipo = defaultIpo(input);
+  ipo.fieldSources = mergeFieldSources(input, undefined, fieldSourceOverrides);
   const cols = IPO_COLUMNS.join(", ");
   const placeholders = IPO_COLUMNS.map((_, i) => `$${i + 1}`).join(", ");
   await query(`INSERT INTO ipos (${cols}) VALUES (${placeholders})`, toColumnValues(ipo));
   return ipo;
 }
 
-/** `knownExisting`: pass the row if the caller already fetched it (e.g. ipoSync.ts's resolveIpo) to skip a redundant SELECT — db.ts opens a fresh Postgres connection per query, so an avoidable one is real latency, not just noise, especially across dozens of rows in one sync. Omit it and this fetches the row itself, as before. */
-export async function updateIpo(id: string, patch: Partial<IpoRow>, knownExisting?: IpoRow): Promise<IpoRow> {
+/** `knownExisting`: pass the row if the caller already fetched it (e.g. ipoSync.ts's resolveIpo) to skip a redundant SELECT — db.ts opens a fresh Postgres connection per query, so an avoidable one is real latency, not just noise, especially across dozens of rows in one sync. Omit it and this fetches the row itself, as before. `fieldSourceOverrides`: see mergeFieldSources() — pass this when the caller knows exactly which source supplied which of the 5 tracked fields (e.g. ipoSync.ts tagging them "NSE"); omitted, any tracked field whose value is actually changing gets tagged "Manual" by default. */
+export async function updateIpo(
+  id: string,
+  patch: Partial<IpoRow>,
+  knownExisting?: IpoRow,
+  fieldSourceOverrides?: Partial<Record<IpoFieldKey, FieldSourceMeta>>
+): Promise<IpoRow> {
   await ensureSchema();
   const existing = knownExisting ?? (await getIpo(id));
   if (!existing) throw new Error(`IPO ${id} not found`);
-  const merged: IpoRow = { ...existing, ...patch, id };
+  const fieldSources = mergeFieldSources(patch, existing, fieldSourceOverrides);
+  const merged: IpoRow = { ...existing, ...patch, id, fieldSources };
   const columnsExceptId = IPO_COLUMNS.filter((c) => c !== "id");
   const setClauses = columnsExceptId.map((c, i) => `${c} = $${i + 2}`).join(", ");
   const allValues = toColumnValues(merged);

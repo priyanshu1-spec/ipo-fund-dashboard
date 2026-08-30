@@ -140,6 +140,20 @@ const SCHEMA_SQL = `
     ALTER TABLE ipos ALTER COLUMN lot_size DROP NOT NULL;
     ALTER TABLE ipos ALTER COLUMN lot_size DROP DEFAULT;
 
+    -- Per-field provenance for the 5 facts that don't all come from one
+    -- place (open/close/allotment/listing dates, registrar): which source
+    -- actually supplied the value currently in that column, when, and how
+    -- confident that source is. JSON keyed by field name, e.g.
+    -- {"openDate":{"source":"NSE","sourceUrl":"...","lastUpdated":"...","confidence":"high"}}
+    -- — see IpoFieldSources in src/types/index.ts and mergeFieldSources()
+    -- in repositories/ipos.ts. Stored as TEXT (not a native jsonb column)
+    -- to match every other free-form field in this table and avoid a
+    -- second serialization convention. A field with no entry here has
+    -- never been confirmed by any tracked source — the dashboard must
+    -- show it as not announced, never silently treat a blank entry as
+    -- low-confidence-but-present.
+    ALTER TABLE ipos ADD COLUMN IF NOT EXISTS field_sources TEXT NOT NULL DEFAULT '{}';
+
     CREATE TABLE IF NOT EXISTS ipo_gmp_history (
       id TEXT PRIMARY KEY,
       ipo_id TEXT NOT NULL REFERENCES ipos(id) ON DELETE CASCADE,
@@ -298,11 +312,13 @@ const SCHEMA_SQL = `
     -- registrars is seeded with known URLs: a registrar's homepage is
     -- stable and easy to confirm, but an exact trading-holiday calendar
     -- changes every year and this app has no live, verifiable source for
-    -- it — shipping guessed dates would silently corrupt the estimated
-    -- allotment/listing dates in ipoTimeline.ts rather than just leaving
-    -- them slightly less precise. An admin adds each date once (from
-    -- NSE's/BSE's published yearly holiday list); every estimate
-    -- computed after that skips it. See repositories/marketHolidays.ts.
+    -- it. NOTE: not currently read anywhere — it fed a blind T+3
+    -- allotment/listing date *estimate* that has since been removed
+    -- entirely (this dashboard now shows only dates an actual source
+    -- confirmed, per an explicit product decision — see api/ipos/route.ts).
+    -- Left in place as harmless, already-built admin infrastructure in
+    -- case a future feature needs a holiday calendar again. See
+    -- repositories/marketHolidays.ts.
     CREATE TABLE IF NOT EXISTS market_holidays (
       id TEXT PRIMARY KEY,
       holiday_date TEXT NOT NULL UNIQUE,

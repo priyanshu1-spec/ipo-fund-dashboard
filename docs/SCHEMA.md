@@ -28,6 +28,36 @@ for what each field means; keep both in sync.
 | is_official | true only when the *core facts* (not GMP) most recently came from an exchange source |
 | data_source | `NSE` \| `Manual` \| `NSE + Manual` |
 | source_url, last_synced_at, notes | |
+| field_sources | JSON, per-field provenance for the 5 facts that don't all come from one place: `openDate`, `closeDate`, `allotmentDate`, `listingDate`, `registrar`. See below. |
+
+### Per-field provenance (`field_sources`)
+
+Each of the 5 tracked fields, when confirmed, has an entry shaped like:
+
+```json
+{ "source": "NSE", "sourceUrl": "https://www.nseindia.com/...", "lastUpdated": "2026-08-30T...", "confidence": "high" }
+```
+
+`confidence` is `high` (an official exchange source, this sync), `medium`
+(an automated but non-exchange source — no such provider is registered
+today), or `manual` (an admin typed it in, e.g. from the IPO's offer
+document). A field with **no entry** has never been confirmed by any
+tracked source — the dashboard shows it as "—", never a value this app
+calculated or guessed itself.
+
+Set in `mergeFieldSources()` (`src/lib/repositories/ipos.ts`):
+`ipoSync.ts` passes an explicit override tagging exactly the fields NSE
+supplied this run as `NSE`/`high`; absent an override (the manual
+add/edit path), any of the 5 fields whose *value is actually changing*
+compared to what's stored gets tagged `Manual` — a save that only touches
+GMP, say, never overwrites another field's existing `NSE` attribution just
+because the whole form round-trips every column.
+
+**This app deliberately does not calculate allotment/listing dates from
+the close date** (a previous version estimated them from SEBI's T+3
+mainboard rule; that was removed). Every date shown on the dashboard is
+either NSE-confirmed or admin-entered — accuracy is prioritized over
+having every field populated, per an explicit product decision.
 
 ## `ipo_gmp_history` — Section 6, historical GMP
 
@@ -145,15 +175,16 @@ using that registrar, no re-sync required.
 
 Empty by default and never seeded — unlike `registrars`, this app has no
 live, independently-verifiable source for the exact yearly NSE/BSE trading
-holiday list, so it never guesses one. An admin adds each date once (from
-NSE's/BSE's published calendar) in `/admin`; `GET /api/ipos` then uses the
-full set to make `estimateAllotmentDate`/`estimateListingDate`
-(`src/lib/ipoTimeline.ts`) skip that date the same way they already skip
-Saturday/Sunday, when computing the `estimatedAllotmentDate`/
-`estimatedListingDate` fields on each IPO row (only populated when there's
-no real, NSE-confirmed date yet). Until a holiday is added here, an
-estimate spanning it can still be off by a day — which is exactly why the
-IPO page always labels these dates "estimated," never as NSE-confirmed.
+holiday list, so it never guesses one.
+
+**Currently not read anywhere.** It originally fed a blind T+3
+allotment/listing date *estimate* (`src/lib/ipoTimeline.ts`); that
+estimation feature has since been removed entirely, per an explicit
+product decision that this dashboard should only ever show a date an
+actual source confirmed (see the `field_sources` note under `ipos`
+above) — never one this app calculated itself, even from a real
+regulatory rule. Left in place as harmless, already-built admin
+infrastructure in case a future feature needs a holiday calendar again.
 
 Sign-up (`/register`) always creates a `pending` row with role `viewer`; an
 admin changes status/role from `/admin`. The original Milestone 1 shared

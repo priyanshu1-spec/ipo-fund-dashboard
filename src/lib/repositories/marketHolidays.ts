@@ -20,12 +20,6 @@ export async function listMarketHolidays(): Promise<MarketHolidayRecord[]> {
   return rows.map(toHoliday);
 }
 
-/** Just the ISO date strings, as a Set — the shape ipoTimeline.ts's estimator actually needs to skip a date in O(1). */
-export async function listMarketHolidayDates(): Promise<Set<string>> {
-  const holidays = await listMarketHolidays();
-  return new Set(holidays.map((h) => h.date));
-}
-
 export async function addMarketHoliday(date: string, description: string, createdBy: string): Promise<MarketHolidayRecord> {
   await ensureSchema();
   const now = new Date().toISOString();

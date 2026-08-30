@@ -36,22 +36,20 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   look up once and save — reused automatically for every IPO with that
   registrar from then on, past and future, no code change or redeploy
   needed. Until a registrar is verified, the icon shows "Link unavailable"
-  instead of a clickable-but-unconfirmed URL. When NSE hasn't
-  published an allotment/listing date yet (and no one has entered one
-  manually), the dashboard shows an **estimated** one instead of leaving it
-  blank — computed server-side from SEBI's standardized T+3 mainboard
-  listing timeline (close date → allotment T+1 working day → listing T+3),
-  a regulatory rule, not another scrape (`src/lib/ipoTimeline.ts`),
-  skipping weekends **and** any date in the **admin-managed market-holiday
-  calendar** (`market_holidays` table, `/admin` → "Market holidays") —
-  left empty by default and never pre-filled with guessed dates, since
-  this app has no live, verifiable source for the exact yearly NSE/BSE
-  holiday list; an admin adds each date once from NSE's/BSE's published
-  calendar. Always shown in italics with "(est.)" and a tooltip explaining
-  it's an estimate and Mainboard-only (SME's timeline isn't consistent
-  enough to estimate confidently) — never silently blended in as if it
-  were NSE-confirmed, and still off by a day for any holiday not yet
-  added to the list.
+  instead of a clickable-but-unconfirmed URL.
+
+  **Every date and the registrar are tracked field-by-field, not as one
+  blended "IPO data" blob.** Each of open date, close date, allotment
+  date, listing date, and registrar carries its own provenance — which
+  source most recently confirmed it, when, and at what confidence (`high`
+  for an NSE sync, `manual` for an admin's own entry) — stored in the
+  `ipos.field_sources` column and surfaced as a hover tooltip on each date
+  cell (see `docs/SCHEMA.md`). **This dashboard deliberately never
+  calculates an allotment or listing date from the close date** — an
+  earlier version did, from SEBI's T+3 mainboard rule, and that estimation
+  was removed: if NSE hasn't published a date and no admin has entered one
+  from the IPO's offer document, the cell shows "—", never a guess dressed
+  up as a fact. Accuracy is prioritized over having every cell populated.
 - **GMP history** — every change is recorded, viewable per-IPO, not just
   overwritten.
 - **Application Ledger** — every bid: which Demat/bank account it was applied

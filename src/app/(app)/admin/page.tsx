@@ -517,12 +517,13 @@ function RegistrarRow({
 }
 
 /**
- * NSE/BSE trading-holiday calendar used to make the estimated
- * allotment/listing dates on the IPO page skip actual market holidays,
- * not just weekends (see lib/ipoTimeline.ts). Deliberately empty until an
- * admin adds dates here — this app has no live, verifiable source for the
- * exact yearly holiday list, so it never guesses one; add each date from
- * NSE's/BSE's published holiday calendar as it's confirmed.
+ * NSE/BSE trading-holiday calendar. Kept as admin-managed reference data
+ * even though nothing currently reads it — it used to feed a blind T+3
+ * allotment/listing date *estimate* that has since been removed entirely
+ * (this dashboard now only ever shows a date an actual source confirmed,
+ * per an explicit product decision). Deliberately empty until an admin
+ * adds dates here — this app has no live, verifiable source for the exact
+ * yearly holiday list, so it never guesses one.
  */
 function MarketHolidaysSection() {
   const { data, mutate, isLoading } = useSWR<{ holidays: MarketHolidayRecord[] }>(

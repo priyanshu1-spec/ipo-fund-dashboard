@@ -24,7 +24,7 @@ import { nseProvider } from "@/lib/ipoProviders/nseProvider";
 import { isPlausibleIpoName, validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import { listRegistrars, matchRegistrar, upsertDetectedRegistrar } from "@/lib/repositories/registrars";
-import type { IpoDataSource, IpoRow } from "@/types";
+import type { FieldSourceMeta, IpoDataSource, IpoFieldKey, IpoRow } from "@/types";
 
 // Order matters only in that NSE (official) typically discovers a company
 // first; a later provider's row for the "same" IPO is matched onto it by
@@ -261,11 +261,31 @@ async function applyNormalizedIpo(
     );
   }
 
+  // Per-field provenance for the 5 facts that get tracked individually
+  // (see IpoFieldSources in @/types): only tag a field with this
+  // provider when the provider actually supplied a value for it this run
+  // — a field this provider left blank must never overwrite an existing
+  // field's attribution just because the row as a whole was touched.
+  // isOfficial mirrors the same distinction this app already draws
+  // everywhere else (an official exchange source vs. everything else).
+  const fieldMeta: FieldSourceMeta = {
+    source: provider.displayName,
+    sourceUrl: item.sourceUrl,
+    lastUpdated: now,
+    confidence: provider.isOfficial ? "high" : "medium",
+  };
+  const fieldSourceOverrides: Partial<Record<IpoFieldKey, FieldSourceMeta>> = {};
+  if (item.openDate) fieldSourceOverrides.openDate = fieldMeta;
+  if (item.closeDate) fieldSourceOverrides.closeDate = fieldMeta;
+  if (item.allotmentDate) fieldSourceOverrides.allotmentDate = fieldMeta;
+  if (item.listingDate) fieldSourceOverrides.listingDate = fieldMeta;
+  if (item.registrar) fieldSourceOverrides.registrar = fieldMeta;
+
   if (existing) {
-    await updateIpo(id, patch, existing);
+    await updateIpo(id, patch, existing, fieldSourceOverrides);
     return "updated";
   }
-  await createIpo({ ...patch, id });
+  await createIpo({ ...patch, id }, fieldSourceOverrides);
   return "inserted";
 }
 

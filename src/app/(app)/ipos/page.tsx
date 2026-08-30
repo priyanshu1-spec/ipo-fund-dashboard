@@ -9,7 +9,23 @@ import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate, IPO_STATUS_COLORS } from "@/lib/utils";
-import type { GmpHistoryEntry, IpoRow, IpoStatus, IpoType } from "@/types";
+import type { FieldSourceMeta, GmpHistoryEntry, IpoRow, IpoStatus, IpoType } from "@/types";
+
+/**
+ * Hover text for a date cell explaining who actually confirmed the value
+ * shown (or nothing, if the cell is just "—" — an unconfirmed field has no
+ * tooltip, same as before). Never describes a calculated/estimated value —
+ * this app doesn't compute those anymore; every date shown here came from
+ * a real source, and this is just surfacing which one.
+ */
+function fieldSourceTooltip(meta?: FieldSourceMeta): string | undefined {
+  if (!meta) return undefined;
+  const when = meta.lastUpdated ? new Date(meta.lastUpdated).toLocaleDateString("en-IN") : "";
+  const suffix = when ? ` • ${when}` : "";
+  if (meta.confidence === "high") return `Confirmed by ${meta.source}${suffix}`;
+  if (meta.confidence === "manual") return `Manually entered by an admin${suffix}`;
+  return `Source: ${meta.source}${suffix}`;
+}
 
 const STATUS_OPTIONS: (IpoStatus | "All")[] = [
   "All",
@@ -273,34 +289,21 @@ export default function IposPage() {
               // admin-verified entry yet means allotmentUrlVerified is
               // false and allotmentUrl is "" — shown as "Link unavailable",
               // never a clickable-but-wrong URL.
-              // Estimated only — computed server-side (GET /api/ipos) from
-              // SEBI's T+3 mainboard listing timeline (close -> allotment
-              // T+1, listing T+3), skipping weekends and the admin-managed
-              // market-holiday list, never confused with a real
-              // NSE-confirmed date. Only present when NSE/manual entry
-              // hasn't already filled the real date in.
-              const estAllotment = ipo.estimatedAllotmentDate ?? null;
-              const estListing = ipo.estimatedListingDate ?? null;
               return (
               <tr key={ipo.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="td font-medium">{ipo.name}</td>
                 <td className="td">{ipo.type}</td>
-                <td className="td">{formatDate(ipo.openDate)}</td>
-                <td className="td">{formatDate(ipo.closeDate)}</td>
+                <td className="td" title={fieldSourceTooltip(ipo.fieldSources?.openDate)}>
+                  {formatDate(ipo.openDate)}
+                </td>
+                <td className="td" title={fieldSourceTooltip(ipo.fieldSources?.closeDate)}>
+                  {formatDate(ipo.closeDate)}
+                </td>
                 <td className="td">
                   <div className="flex items-center gap-1.5">
-                    {ipo.allotmentDate ? (
-                      formatDate(ipo.allotmentDate)
-                    ) : estAllotment ? (
-                      <span
-                        className="italic text-slate-400"
-                        title="Estimated from SEBI's standard T+3 listing timeline (close date + 1 working day, skipping weekends and any dates in Admin -> Market holidays) — not yet confirmed by NSE."
-                      >
-                        ~{formatDate(estAllotment)} (est.)
-                      </span>
-                    ) : (
-                      "—"
-                    )}
+                    <span title={fieldSourceTooltip(ipo.fieldSources?.allotmentDate)}>
+                      {formatDate(ipo.allotmentDate)}
+                    </span>
                     {showAllotmentAction &&
                       (ipo.allotmentUrlVerified && ipo.allotmentUrl ? (
                         <a
@@ -326,19 +329,8 @@ export default function IposPage() {
                       ))}
                   </div>
                 </td>
-                <td className="td">
-                  {ipo.listingDate ? (
-                    formatDate(ipo.listingDate)
-                  ) : estListing ? (
-                    <span
-                      className="italic text-slate-400"
-                      title="Estimated from SEBI's standard T+3 listing timeline (close date + 3 working days, skipping weekends and any dates in Admin -> Market holidays) — not yet confirmed by NSE."
-                    >
-                      ~{formatDate(estListing)} (est.)
-                    </span>
-                  ) : (
-                    "—"
-                  )}
+                <td className="td" title={fieldSourceTooltip(ipo.fieldSources?.listingDate)}>
+                  {formatDate(ipo.listingDate)}
                 </td>
                 <td className="td">
                   ₹{ipo.priceBandMin}–{ipo.priceBandMax}

@@ -60,6 +60,26 @@ export type IpoStatus =
  */
 export type IpoDataSource = string;
 
+/**
+ * Per-field provenance, tracked separately for the 5 facts that don't all
+ * come from one place: open date, close date, allotment date, listing
+ * date, registrar. "high" = confirmed by an official exchange source this
+ * sync; "medium" = an automated but non-exchange source; "manual" = an
+ * admin typed it in (e.g. from the IPO's offer document) — every case is
+ * a real, sourced value, never a calculated or guessed one. A field with
+ * no FieldSourceMeta entry has never been confirmed and must render as
+ * not-announced, never blended with a fabricated placeholder.
+ */
+export type FieldConfidence = "high" | "medium" | "manual";
+export type IpoFieldKey = "openDate" | "closeDate" | "allotmentDate" | "listingDate" | "registrar";
+export interface FieldSourceMeta {
+  source: string; // e.g. "NSE" or "Manual"
+  sourceUrl: string;
+  lastUpdated: string; // ISO timestamp
+  confidence: FieldConfidence;
+}
+export type IpoFieldSources = Partial<Record<IpoFieldKey, FieldSourceMeta>>;
+
 export interface IpoRow {
   id: string; // stable identifier — see generateIpoId() in repositories/ipos.ts; never re-derive from name alone
   name: string;
@@ -110,16 +130,8 @@ export interface IpoRow {
    */
   allotmentUrl?: string;
   allotmentUrlVerified?: boolean;
-  /**
-   * Also NOT a database column — computed on every GET /api/ipos from
-   * SEBI's T+3 mainboard listing rule (see lib/ipoTimeline.ts), skipping
-   * weekends AND the admin-managed market_holidays table. Only set when
-   * there's no real allotmentDate/listingDate yet and this is a
-   * Mainboard IPO (SME timelines aren't consistent enough to estimate).
-   * Always render these as "estimated", never as if NSE-confirmed.
-   */
-  estimatedAllotmentDate?: string | null;
-  estimatedListingDate?: string | null;
+  /** See IpoFieldSources above — who last confirmed openDate/closeDate/allotmentDate/listingDate/registrar, and how. Never used to compute a value, only to explain one that's already in the column above (or its absence). */
+  fieldSources?: IpoFieldSources;
 }
 
 /** A registrar's admin-managed allotment-status page — see src/lib/repositories/registrars.ts. Never hardcoded, never guessed: only becomes verified/clickable via an admin explicitly saving it in /admin. */
