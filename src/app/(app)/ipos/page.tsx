@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
-import { Plus, RefreshCw, Search, Pencil, Trash2, History } from "lucide-react";
+import { Plus, RefreshCw, Search, Pencil, Trash2, History, ExternalLink } from "lucide-react";
 import { fetcher, apiRequest } from "@/lib/fetcher";
 import { PageHeader } from "@/components/PageHeader";
 import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate, IPO_STATUS_COLORS } from "@/lib/utils";
+import { getAllotmentLink } from "@/lib/allotmentLinks";
 import type { GmpHistoryEntry, IpoRow, IpoStatus, IpoType } from "@/types";
 
 const STATUS_OPTIONS: (IpoStatus | "All")[] = [
@@ -261,13 +262,31 @@ export default function IposPage() {
                 </td>
               </tr>
             )}
-            {filtered.map((ipo) => (
+            {filtered.map((ipo) => {
+              const showAllotmentLink = ipo.status !== "Upcoming" && ipo.status !== "Open";
+              const allotmentLink = showAllotmentLink ? getAllotmentLink(ipo.registrar, ipo.name) : null;
+              return (
               <tr key={ipo.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="td font-medium">{ipo.name}</td>
                 <td className="td">{ipo.type}</td>
                 <td className="td">{formatDate(ipo.openDate)}</td>
                 <td className="td">{formatDate(ipo.closeDate)}</td>
-                <td className="td">{formatDate(ipo.allotmentDate)}</td>
+                <td className="td">
+                  <div className="flex items-center gap-1.5">
+                    {formatDate(ipo.allotmentDate)}
+                    {allotmentLink && (
+                      <a
+                        href={allotmentLink.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={allotmentLink.label}
+                        className="text-slate-400 hover:text-brand-600"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+                </td>
                 <td className="td">{formatDate(ipo.listingDate)}</td>
                 <td className="td">
                   ₹{ipo.priceBandMin}–{ipo.priceBandMax}
@@ -318,7 +337,8 @@ export default function IposPage() {
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

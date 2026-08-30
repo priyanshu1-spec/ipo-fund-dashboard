@@ -24,7 +24,13 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   Every user (viewer, editor, admin) can still view this list. Every row
   is labeled by data source (NSE vs Manual vs both), and GMP is always
   clearly marked unofficial/market-indicative since no legitimate source for
-  it exists anywhere.
+  it exists anywhere. Once an IPO closes, an icon next to its Allotment
+  date links straight to that IPO's **registrar** (KFin, Link Intime,
+  Bigshare, etc. — allotment is always checked on the registrar's site,
+  never NSE/BSE) for a small set of well-known registrars this app
+  recognizes by name (`src/lib/allotmentLinks.ts`); an unrecognized or
+  missing registrar falls back to a pre-filled Google search instead of a
+  dead link, so this always gets you *somewhere* useful.
 - **GMP history** — every change is recorded, viewable per-IPO, not just
   overwritten.
 - **Application Ledger** — every bid: which Demat/bank account it was applied
