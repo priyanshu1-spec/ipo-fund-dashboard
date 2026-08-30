@@ -15,6 +15,9 @@ function toRegistrar(r: Record<string, unknown>): RegistrarRecord {
     createdAt: String(r.created_at ?? ""),
     updatedAt: String(r.updated_at ?? ""),
     updatedBy: String(r.updated_by ?? ""),
+    candidateDomain: String(r.candidate_domain ?? ""),
+    candidateSourceUrl: String(r.candidate_source_url ?? ""),
+    candidateSnippet: String(r.candidate_snippet ?? ""),
   };
 }
 
@@ -47,16 +50,31 @@ export function matchRegistrar(rawRegistrar: string, registrars: RegistrarRecord
  * string (as its own match_key) already has a row, whether still pending
  * or already verified by an admin, so a sync never overwrites an admin's
  * work or spams duplicate pending rows for the same registrar spelling.
+ *
+ * `candidate`: an optional, unconfirmed suggestion from the SEBI RHP/DRHP
+ * lookup (ipoProviders/sebiRegistrarLookup.ts) — stored purely for the
+ * admin to see and verify, never treated as fact. Omit it (as before this
+ * lookup existed) and the row is created exactly as it always was, with an
+ * empty candidate.
  */
-export async function upsertDetectedRegistrar(rawRegistrar: string): Promise<void> {
+export async function upsertDetectedRegistrar(
+  rawRegistrar: string,
+  candidate?: { domain?: string; sourceUrl?: string; snippet?: string }
+): Promise<void> {
   await ensureSchema();
   const matchKey = rawRegistrar.trim().toLowerCase();
   if (!matchKey) return;
   const now = new Date().toISOString();
   const id = generateId("registrar");
   await sql`
-    INSERT INTO registrars (id, match_key, display_name, allotment_url, verified, source, created_at, updated_at, updated_by)
-    VALUES (${id}, ${matchKey}, ${rawRegistrar.trim()}, '', false, 'auto-detected', ${now}, ${now}, 'system')
+    INSERT INTO registrars (
+      id, match_key, display_name, allotment_url, verified, source, created_at, updated_at, updated_by,
+      candidate_domain, candidate_source_url, candidate_snippet
+    )
+    VALUES (
+      ${id}, ${matchKey}, ${rawRegistrar.trim()}, '', false, 'auto-detected', ${now}, ${now}, 'system',
+      ${candidate?.domain ?? ""}, ${candidate?.sourceUrl ?? ""}, ${candidate?.snippet ?? ""}
+    )
     ON CONFLICT (match_key) DO NOTHING
   `;
 }
@@ -72,7 +90,8 @@ export async function setRegistrarUrl(
   const now = new Date().toISOString();
   const { rows } = await sql`
     UPDATE registrars
-    SET allotment_url = ${allotmentUrl}, verified = ${verified}, source = 'admin', updated_at = ${now}, updated_by = ${updatedBy}
+    SET allotment_url = ${allotmentUrl}, verified = ${verified}, source = 'admin', updated_at = ${now}, updated_by = ${updatedBy},
+        candidate_domain = '', candidate_source_url = '', candidate_snippet = ''
     WHERE id = ${id}
     RETURNING *
   `;

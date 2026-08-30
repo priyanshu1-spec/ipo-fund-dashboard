@@ -418,7 +418,13 @@ function RegistrarRow({
   /** Renders as a <tr> (the main directory table) instead of a card. */
   asRow?: boolean;
 }) {
-  const [url, setUrl] = useState(registrar.allotmentUrl);
+  // If a SEBI RHP/DRHP lookup found a possible domain for this
+  // still-pending registrar, pre-fill it as a starting point — never
+  // auto-saved, the admin must still confirm/edit and explicitly click
+  // "Save & verify" (see ipoProviders/sebiRegistrarLookup.ts).
+  const [url, setUrl] = useState(
+    registrar.allotmentUrl || (registrar.candidateDomain ? `https://${registrar.candidateDomain}` : "")
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -465,6 +471,31 @@ function RegistrarRow({
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Seen on a recent IPO — no allotment-status page saved yet.
           </p>
+          {registrar.candidateDomain && (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              Possible domain found in the IPO&apos;s SEBI RHP/DRHP filing: <strong>{registrar.candidateDomain}</strong> —
+              unverified, review before saving.
+              {registrar.candidateSourceUrl && (
+                <>
+                  {" "}
+                  <a
+                    href={registrar.candidateSourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    View SEBI filing
+                  </a>
+                </>
+              )}
+            </p>
+          )}
+          {registrar.candidateSnippet && (
+            <p className="mt-1 max-w-md text-xs italic text-slate-400" title={registrar.candidateSnippet}>
+              &ldquo;{registrar.candidateSnippet.slice(0, 120)}
+              {registrar.candidateSnippet.length > 120 ? "…" : ""}&rdquo;
+            </p>
+          )}
         </div>
         {editing ? (
           editForm

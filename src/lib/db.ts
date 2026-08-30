@@ -307,6 +307,16 @@ const SCHEMA_SQL = `
       ('registrar_seed_integrated', 'integrated', 'Integrated Registry', 'https://intimeindia.integratedindia.in/ipostatus.html', true, 'seed', now()::text, now()::text, 'system')
     ON CONFLICT (match_key) DO NOTHING;
 
+    -- Candidate data for a still-pending (verified = false) registrar row,
+    -- found by the SEBI RHP/DRHP lookup (see ipoProviders/sebiRegistrarLookup.ts)
+    -- when a sync first sees an unrecognized registrar name. NEVER treated
+    -- as confirmed and NEVER used to compute allotment_url automatically —
+    -- purely a suggestion an admin sees on the "New Registrar Detected"
+    -- card and must still explicitly review/edit/save.
+    ALTER TABLE registrars ADD COLUMN IF NOT EXISTS candidate_domain TEXT NOT NULL DEFAULT '';
+    ALTER TABLE registrars ADD COLUMN IF NOT EXISTS candidate_source_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE registrars ADD COLUMN IF NOT EXISTS candidate_snippet TEXT NOT NULL DEFAULT '';
+
     -- NSE/BSE trading-holiday calendar, admin-managed and empty by
     -- default. Deliberately NOT seeded with holiday dates the way
     -- registrars is seeded with known URLs: a registrar's homepage is

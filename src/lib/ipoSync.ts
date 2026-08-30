@@ -22,6 +22,7 @@ import {
 } from "@/lib/repositories/ipos";
 import { nseProvider } from "@/lib/ipoProviders/nseProvider";
 import { isPlausibleIpoName, validateNormalizedIpos } from "@/lib/ipoProviders/normalizedIpoSchema";
+import { lookupSebiRegistrar } from "@/lib/ipoProviders/sebiRegistrarLookup";
 import type { IpoDataProvider, NormalizedIpo } from "@/lib/ipoProviders/types";
 import { listRegistrars, matchRegistrar, upsertDetectedRegistrar } from "@/lib/repositories/registrars";
 import type { FieldSourceMeta, IpoDataSource, IpoFieldKey, IpoRow } from "@/types";
@@ -68,6 +69,16 @@ const PROVIDERS: IpoDataProvider[] = [nseProvider];
  * in the route files that call runIpoSync() for the matching outer bound.
  */
 const PROVIDER_FETCH_TIMEOUT_MS = 35_000;
+
+/**
+ * Hard ceiling on one SEBI RHP/DRHP registrar lookup (see
+ * ipoProviders/sebiRegistrarLookup.ts) — this runs AFTER the main provider
+ * fetch/write stages, once per genuinely new registrar (rare in steady
+ * state), so a slow or hung SEBI request must never be allowed to blow the
+ * route's overall maxDuration the way an unbounded provider fetch once
+ * did. A timeout here degrades to "no suggestion," never a sync failure.
+ */
+const SEBI_LOOKUP_TIMEOUT_MS = 20_000;
 
 function withHardTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -354,9 +365,12 @@ export async function runIpoSync(): Promise<SyncSummary> {
   // possibly-overlapping rows concurrently.
   const providerSummaries: ProviderRunSummary[] = [];
   // Every distinct registrar string seen across every provider's valid
-  // rows this run — checked against the registrars table once, after the
-  // write loop, rather than once per row (see the detection step below).
-  const registrarsSeen = new Set<string>();
+  // rows this run, mapped to one representative company name that reported
+  // it — checked against the registrars table once, after the write loop,
+  // rather than once per row (see the detection step below). The company
+  // name is kept so a genuinely new registrar can be looked up on SEBI by
+  // the IPO that surfaced it.
+  const registrarsSeen = new Map<string, string>();
   for (const { provider, providerStart, fetchMs, result, fetchError } of fetchOutcomes) {
     let inserted = 0;
     let updated = 0;
@@ -381,7 +395,9 @@ export async function runIpoSync(): Promise<SyncSummary> {
           const outcome = await applyNormalizedIpo(item, provider);
           if (outcome === "inserted") inserted++;
           if (outcome === "updated") updated++;
-          if (item.registrar?.trim()) registrarsSeen.add(item.registrar.trim());
+          if (item.registrar?.trim() && !registrarsSeen.has(item.registrar.trim())) {
+            registrarsSeen.set(item.registrar.trim(), item.name);
+          }
         }
 
         const allWarnings = [
@@ -435,15 +451,47 @@ export async function runIpoSync(): Promise<SyncSummary> {
   // Registrar detection: every registrar name seen this run that doesn't
   // already match a row in the registrars table (verified or still
   // pending) gets a placeholder row — this is what surfaces it in /admin
-  // as "New Registrar Detected" for a human to look up once, instead of
-  // this app trying (and failing, the same way Chittorgarh/IPOWatch did)
-  // to guess or scrape its way to an allotment URL automatically.
+  // as "New Registrar Detected" for a human to review, instead of this app
+  // ever guessing or fabricating an allotment URL automatically (the same
+  // reason Chittorgarh/IPOWatch were retired — see their files).
+  //
+  // Best-effort enrichment: for a genuinely new registrar, also try SEBI's
+  // public RHP/DRHP filing for the IPO that reported it (see
+  // ipoProviders/sebiRegistrarLookup.ts) — local fetch + local PDF text
+  // search, no paid/AI service. This is purely a suggestion pre-filled on
+  // the "New Registrar Detected" card; it never gets written as a verified
+  // registrar or allotment URL on its own, and a failure here (timeout,
+  // unrecognized SEBI markup, no match) never blocks registrar detection
+  // itself — the row is still created either way, exactly as before this
+  // lookup existed.
   if (registrarsSeen.size > 0) {
     const knownRegistrars = await listRegistrars();
-    for (const registrar of registrarsSeen) {
-      if (!matchRegistrar(registrar, knownRegistrars)) {
-        await upsertDetectedRegistrar(registrar);
-      }
+    // Cap how many SEBI lookups run in one sync — steady state is 0-1 new
+    // registrars per run, but a first-ever run (empty registrars table) or
+    // an unusually large batch of new IPOs could surface many at once;
+    // this keeps the worst case bounded well under the route's
+    // maxDuration instead of one sync running dozens of sequential SEBI
+    // lookups. Any registrar past the cap still gets its placeholder row
+    // (visible in /admin either way) — it just skips the SEBI suggestion.
+    const MAX_SEBI_LOOKUPS_PER_SYNC = 5;
+    let sebiLookupsUsed = 0;
+    for (const [registrar, companyName] of registrarsSeen) {
+      if (matchRegistrar(registrar, knownRegistrars)) continue;
+      const candidate =
+        sebiLookupsUsed < MAX_SEBI_LOOKUPS_PER_SYNC
+          ? await withHardTimeout(
+              lookupSebiRegistrar(companyName),
+              SEBI_LOOKUP_TIMEOUT_MS,
+              `SEBI registrar lookup for ${companyName}`
+            ).catch(() => undefined)
+          : undefined;
+      if (sebiLookupsUsed < MAX_SEBI_LOOKUPS_PER_SYNC) sebiLookupsUsed++;
+      await upsertDetectedRegistrar(
+        registrar,
+        candidate
+          ? { domain: candidate.registrarDomain, sourceUrl: candidate.filingUrl, snippet: candidate.snippet }
+          : undefined
+      );
     }
   }
 

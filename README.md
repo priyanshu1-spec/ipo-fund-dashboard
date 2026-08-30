@@ -32,11 +32,20 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   guessed URL. Seeded with the handful of long-established registrars
   (KFin, Link Intime, Bigshare, Cameo, Skyline, Purva, Integrated
   Registry); any other registrar name a sync run sees for the first time
-  gets flagged in `/admin` as "New registrar detected" for an admin to
-  look up once and save — reused automatically for every IPO with that
-  registrar from then on, past and future, no code change or redeploy
-  needed. Until a registrar is verified, the icon shows "Link unavailable"
-  instead of a clickable-but-unconfirmed URL.
+  gets flagged in `/admin` as "New registrar detected." For each new one,
+  the app also makes a free, fully local best-effort attempt to help: it
+  looks up the IPO's own RHP/DRHP filing on **SEBI's public filings page**
+  (`sebi.gov.in/filings/public-issues.html`), downloads the linked PDF, and
+  extracts the "Registrar to the Issue" name/domain **locally** with
+  `pdf-parse` (no AI, no LLM, no paid search API — see `docs/SCHEMA.md` for
+  the full chain and its honest confidence caveat). That's shown on the
+  admin card as a suggestion only, pre-filling the URL field — an admin
+  still has to review and explicitly save it. Once saved, it's reused
+  automatically for every IPO with that registrar from then on, past and
+  future, no code change or redeploy needed. Until a registrar is
+  verified, the icon shows "Link unavailable" instead of a
+  clickable-but-unconfirmed URL — this app never fabricates a URL, from a
+  guess or from an extracted domain either.
 
   **Every date and the registrar are tracked field-by-field, not as one
   blended "IPO data" blob.** Each of open date, close date, allotment

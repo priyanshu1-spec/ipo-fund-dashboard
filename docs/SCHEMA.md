@@ -153,6 +153,7 @@ still fully visible and editable by any `admin`, just invisible to
 | verified | `false` until an admin explicitly saves a URL for this row — the ONLY thing that makes an IPO's "Check Allotment" link clickable (`src/app/api/ipos/route.ts` resolves against this table, never a hardcoded map) |
 | source | `seed` (shipped with the app), `auto-detected` (seen during a sync, not yet reviewed), or `admin` |
 | created_at, updated_at, updated_by | |
+| candidate_domain, candidate_source_url, candidate_snippet | unconfirmed suggestion for a still-pending row, from the SEBI RHP/DRHP lookup below — never treated as fact, never used to compute `allotment_url` on its own; cleared once an admin saves a real `allotment_url` |
 
 Seeded at first schema run with the handful of long-established Indian IPO
 registrars (KFin, Link Intime, Bigshare, Cameo, Skyline, Purva, Integrated
@@ -163,6 +164,51 @@ what surfaces it in `/admin` as "New registrar detected." Resolution
 happens at *read* time (`GET /api/ipos`), not stored per-IPO, so an
 admin's fix or a new save applies immediately to every past and future IPO
 using that registrar, no re-sync required.
+
+### SEBI RHP/DRHP registrar lookup (`src/lib/ipoProviders/sebiRegistrarLookup.ts`)
+
+For each genuinely new registrar detected in a sync (capped at 5 per run —
+see `runIpoSync()`), the app makes a best-effort attempt to find a
+candidate registrar name/domain automatically, entirely with free public
+data and local processing:
+
+1. Fetch SEBI's own public "Filings → Public Issues" listing
+   (`sebi.gov.in/filings/public-issues.html`) and fuzzy-match the IPO's
+   company name against it to find that company's SEBI filing page.
+2. Fetch that filing page and find its linked PDF (RHP/DRHP/Abridged
+   Prospectus).
+3. Download the PDF and extract its text **locally** with `pdf-parse` — a
+   pure-JS text extractor, no AI/LLM, no network calls beyond the fetch
+   itself. (This is the Node/TypeScript equivalent of Python's
+   pypdf/pdfplumber for this codebase, which has no Python runtime.)
+4. Search the extracted text locally for "Registrar to the Issue" and its
+   known variants, and pull out the company-name-shaped text (and any
+   URL-shaped text) immediately following it.
+
+No paid API, search API, or LLM is used anywhere in this chain. Every step
+fails soft (returns nothing rather than throwing) on any HTTP error,
+timeout, or unrecognized markup — a failure here never blocks or fails the
+sync itself, and the registrar still gets its ordinary pending row.
+
+**What this never does**: write to `verified`, `allotment_url`, or
+otherwise treat its own output as fact. The result is only ever shown as a
+suggestion on the "New Registrar Detected" card in `/admin` — a candidate
+domain pre-filling (never auto-saving) the URL field, plus a link to the
+actual SEBI filing so the admin can verify against the real document
+themselves.
+
+**Confidence caveat, stated plainly**: this exact SEBI page/PDF structure
+could not be verified by live-loading sebi.gov.in from this development
+environment — its network egress proxy blocks sebi.gov.in outright (the
+same restriction nseProvider.ts and every other exchange/regulator
+integration in this app already operates under). The URL pattern coded
+here is based on real, independently-indexed SEBI filing URLs across many
+companies and months (found via web search), not a guess — but it is
+genuinely unverified against SEBI's live site. Exactly like nseProvider.ts
+originally, the real test is the first "Refresh IPO Data" click in
+production; if SEBI's actual markup doesn't match, this simply finds
+nothing (same behavior as if the module didn't exist), never something
+wrong.
 
 ## `market_holidays` — NSE/BSE trading-holiday calendar
 

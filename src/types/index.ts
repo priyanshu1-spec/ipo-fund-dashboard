@@ -146,6 +146,19 @@ export interface RegistrarRecord {
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
+  /**
+   * Unconfirmed suggestions found by the SEBI RHP/DRHP lookup (see
+   * ipoProviders/sebiRegistrarLookup.ts) when this row was first detected
+   * — a possible domain and the SEBI filing it came from, shown on the
+   * "New Registrar Detected" card so an admin has a documented starting
+   * point instead of a blank form. NEVER auto-verified, NEVER used to
+   * compute allotmentUrl on its own — an admin must still explicitly
+   * review and save. Empty strings once verified/admin-edited (no longer
+   * relevant once a real allotmentUrl is set).
+   */
+  candidateDomain?: string;
+  candidateSourceUrl?: string;
+  candidateSnippet?: string;
 }
 
 /** An NSE/BSE trading holiday an admin has entered — see src/lib/repositories/marketHolidays.ts. Empty by default; never seeded with guessed dates. */
