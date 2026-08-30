@@ -10,6 +10,7 @@ import { Modal } from "@/components/Modal";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate, IPO_STATUS_COLORS } from "@/lib/utils";
 import { getAllotmentLink } from "@/lib/allotmentLinks";
+import { estimateAllotmentDate, estimateListingDate } from "@/lib/ipoTimeline";
 import type { GmpHistoryEntry, IpoRow, IpoStatus, IpoType } from "@/types";
 
 const STATUS_OPTIONS: (IpoStatus | "All")[] = [
@@ -265,6 +266,13 @@ export default function IposPage() {
             {filtered.map((ipo) => {
               const showAllotmentLink = ipo.status !== "Upcoming" && ipo.status !== "Open";
               const allotmentLink = showAllotmentLink ? getAllotmentLink(ipo.registrar, ipo.name) : null;
+              // Estimated only — computed from SEBI's T+3 mainboard listing
+              // timeline (close -> allotment T+1, listing T+3), never
+              // confused with a real NSE-confirmed date. Only shown once
+              // there's actually a close date to estimate from, and only
+              // when NSE/manual entry hasn't already filled the real one in.
+              const estAllotment = !ipo.allotmentDate ? estimateAllotmentDate(ipo.closeDate, ipo.type) : null;
+              const estListing = !ipo.listingDate ? estimateListingDate(ipo.closeDate, ipo.type) : null;
               return (
               <tr key={ipo.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="td font-medium">{ipo.name}</td>
@@ -273,7 +281,18 @@ export default function IposPage() {
                 <td className="td">{formatDate(ipo.closeDate)}</td>
                 <td className="td">
                   <div className="flex items-center gap-1.5">
-                    {formatDate(ipo.allotmentDate)}
+                    {ipo.allotmentDate ? (
+                      formatDate(ipo.allotmentDate)
+                    ) : estAllotment ? (
+                      <span
+                        className="italic text-slate-400"
+                        title="Estimated from SEBI's standard T+3 listing timeline (close date + 1 working day) — not yet confirmed by NSE. Doesn't account for market holidays, so may be off by a day."
+                      >
+                        ~{formatDate(estAllotment)} (est.)
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                     {allotmentLink && (
                       <a
                         href={allotmentLink.url}
@@ -287,7 +306,20 @@ export default function IposPage() {
                     )}
                   </div>
                 </td>
-                <td className="td">{formatDate(ipo.listingDate)}</td>
+                <td className="td">
+                  {ipo.listingDate ? (
+                    formatDate(ipo.listingDate)
+                  ) : estListing ? (
+                    <span
+                      className="italic text-slate-400"
+                      title="Estimated from SEBI's standard T+3 listing timeline (close date + 3 working days) — not yet confirmed by NSE. Doesn't account for market holidays, so may be off by a day."
+                    >
+                      ~{formatDate(estListing)} (est.)
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="td">
                   ₹{ipo.priceBandMin}–{ipo.priceBandMax}
                 </td>

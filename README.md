@@ -30,7 +30,16 @@ audit log (Milestone 2) — see `docs/DEPLOYMENT.md` and inline comments in
   never NSE/BSE) for a small set of well-known registrars this app
   recognizes by name (`src/lib/allotmentLinks.ts`); an unrecognized or
   missing registrar falls back to a pre-filled Google search instead of a
-  dead link, so this always gets you *somewhere* useful.
+  dead link, so this always gets you *somewhere* useful. When NSE hasn't
+  published an allotment/listing date yet (and no one has entered one
+  manually), the dashboard shows an **estimated** one instead of leaving it
+  blank — computed from SEBI's standardized T+3 mainboard listing timeline
+  (close date → allotment T+1 working day → listing T+3), a regulatory
+  rule, not another scrape (`src/lib/ipoTimeline.ts`). Always shown in
+  italics with "(est.)" and a tooltip explaining it's an estimate, doesn't
+  account for market holidays, and is Mainboard-only (SME's timeline isn't
+  consistent enough to estimate confidently) — never silently blended in
+  as if it were NSE-confirmed.
 - **GMP history** — every change is recorded, viewable per-IPO, not just
   overwritten.
 - **Application Ledger** — every bid: which Demat/bank account it was applied
